@@ -1,0 +1,10 @@
+.expo/
+node_modules/
+.expo/
+dist/
+build/
+web-build/
+coverage/
+.env
+.env.*
+!.env.example

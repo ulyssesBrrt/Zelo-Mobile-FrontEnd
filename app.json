@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "zelo-app",
+    "slug": "zelo-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#FAFAFA"
+      }
+    },
+    "plugins": [
+      "expo-font"
+    ]
+  }
+}
