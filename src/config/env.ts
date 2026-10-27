@@ -1,3 +1,3 @@
-// Define o IP da sua máquina na rede Wi-Fi para o Expo Go conseguir conectar ao backend
-export const API_URL = 'http://192.168.0.7:8080';
+// Define a URL da API hospedada na nuvem (Render)
+export const API_URL = 'https://zelo-backend-api.onrender.com';
 export const REQUEST_TIMEOUT_MS = 10000;
