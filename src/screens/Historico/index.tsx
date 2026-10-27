@@ -54,13 +54,13 @@ export const HistoricoScreen: React.FC = () => {
 
   // Estados dos dados carregados
   const [todayRecords, setTodayRecords] = useState<DoseRecord[]>([]);
-  const [todaySummary, setTodaySummary] = useState<PeriodDoseSummary>({ totalTomadas: 1, totalPendentes: 2, totalNaoTomadas: 1 });
+  const [todaySummary, setTodaySummary] = useState<PeriodDoseSummary>({ totalTomadas: 0, totalPendentes: 0, totalNaoTomadas: 0 });
 
   const [weekDays, setWeekDays] = useState<DayDoseSummary[]>([]);
-  const [weekSummary, setWeekSummary] = useState<PeriodDoseSummary>({ totalTomadas: 11, totalPendentes: 3, totalNaoTomadas: 0 });
+  const [weekSummary, setWeekSummary] = useState<PeriodDoseSummary>({ totalTomadas: 0, totalPendentes: 0, totalNaoTomadas: 0 });
 
   const [monthDays, setMonthDays] = useState<DayDoseSummary[]>([]);
-  const [monthSummary, setMonthSummary] = useState<PeriodDoseSummary>({ totalTomadas: 28, totalPendentes: 8, totalNaoTomadas: 2 });
+  const [monthSummary, setMonthSummary] = useState<PeriodDoseSummary>({ totalTomadas: 0, totalPendentes: 0, totalNaoTomadas: 0 });
 
   // Modal para detalhamento ao clicar em um dia específico na visão Semana ou Mês
   const [selectedDayDetail, setSelectedDayDetail] = useState<DayDoseSummary | null>(null);

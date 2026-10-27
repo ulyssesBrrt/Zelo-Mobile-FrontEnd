@@ -1,8 +1,9 @@
 export interface HealthInfo {
-  dataNascimento: string; // Ex: '05/07/2007'
-  tipoSanguineo: string;  // Ex: 'O-'
-  alergias: string;       // Ex: 'Abelha, Penicilina'
-  condicaoSaude: string;  // Ex: 'Diabético, Hipertensão'
+  dataNascimento?: string;
+  tipoSanguineo?: string;
+  alergias?: string;
+  condicaoSaude?: string;
+  observacoesImportantes?: string;
 }
 
 export interface UserProfile {

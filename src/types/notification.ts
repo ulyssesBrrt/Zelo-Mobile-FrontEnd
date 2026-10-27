@@ -1,4 +1,4 @@
-export type NotificationType = 'estoque_baixo' | 'hora_medicacao' | 'consulta';
+export type NotificationType = 'geral' | 'estoque_baixo' | 'lembrete' | 'consulta' | 'exame';
 
 export interface NotificationItem {
   id: string;
@@ -7,5 +7,5 @@ export interface NotificationItem {
   descricao: string;
   dataHorario: string;
   lida: boolean;
-  createdAt: number;
+  createdAt?: number;
 }

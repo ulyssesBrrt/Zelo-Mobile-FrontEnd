@@ -40,31 +40,10 @@ const VIAS = [
   'Outra',
 ];
 
-const HORARIOS_PREDEFINIDOS = [
-  '06:00',
-  '07:00',
-  '08:00',
-  '09:00',
-  '10:00',
-  '11:00',
-  '12:00',
-  '13:00',
-  '14:00',
-  '15:00',
-  '16:00',
-  '17:00',
-  '18:00',
-  '19:00',
-  '20:00',
-  '21:00',
-  '22:00',
-  '23:00',
-];
-
 export const CadastroMedicamentoScreen: React.FC = () => {
   const navigation = useNavigation<CadastroMedicamentoScreenNavigationProp>();
 
-  // Estados dos campos do formulário conforme Figma
+  // Estados dos campos do formulário
   const [nome, setNome] = useState<string>('');
   const [dosagem, setDosagem] = useState<string>('');
   const [formato, setFormato] = useState<string>('');
@@ -75,27 +54,34 @@ export const CadastroMedicamentoScreen: React.FC = () => {
   // Estados de controle e feedback
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  // Estados dos Modais de seleção (Formato, Via, Horário)
+  // Modais de seleção (Formato e Via)
   const [isFormatoModalVisible, setIsFormatoModalVisible] = useState<boolean>(false);
   const [isViaModalVisible, setIsViaModalVisible] = useState<boolean>(false);
-  const [isHorarioModalVisible, setIsHorarioModalVisible] = useState<boolean>(false);
 
-  // Retorno à tela anterior
   const handleVoltar = () => {
     navigation.goBack();
   };
 
-  // Tratamento do campo estoque (apenas números inteiros não negativos)
+  // Máscara automática de horário (HH:MM) ao digitar apenas números
+  const handleHorarioChange = (text: string) => {
+    const cleaned = text.replace(/\D/g, '').slice(0, 4);
+    let formatted = cleaned;
+    if (cleaned.length > 2) {
+      formatted = `${cleaned.slice(0, 2)}:${cleaned.slice(2, 4)}`;
+    }
+    setHorario(formatted);
+  };
+
+  // Tratamento do campo estoque (somente números)
   const handleEstoqueChange = (text: string) => {
     const numericText = text.replace(/[^0-9]/g, '');
     setEstoque(numericText);
   };
 
-  // Validação e persistência
+  // Validação e persistência do medicamento
   const handleSalvar = async () => {
     if (isSubmitting) return;
 
-    // Validação dos campos obrigatórios
     if (!nome.trim()) {
       Alert.alert('Campo obrigatório', 'Por favor, informe o nome do medicamento.');
       return;
@@ -113,9 +99,17 @@ export const CadastroMedicamentoScreen: React.FC = () => {
       return;
     }
     if (!horario.trim()) {
-      Alert.alert('Campo obrigatório', 'Por favor, selecione o horário do medicamento.');
+      Alert.alert('Campo obrigatório', 'Por favor, informe o horário do medicamento.');
       return;
     }
+
+    // Validação estrita do formato de horário HH:MM (00:00 - 23:59)
+    const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
+    if (!timeRegex.test(horario.trim())) {
+      Alert.alert('Horário inválido', 'Por favor, informe um horário válido no formato HH:MM (ex: 07:45).');
+      return;
+    }
+
     if (!estoque.trim()) {
       Alert.alert('Campo obrigatório', 'Por favor, informe a quantidade em estoque.');
       return;
@@ -127,6 +121,10 @@ export const CadastroMedicamentoScreen: React.FC = () => {
       return;
     }
 
+    // Formatação final garantida (ex: 7:45 -> 07:45)
+    const parts = horario.trim().split(':');
+    const formattedHorario = `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`;
+
     setIsSubmitting(true);
 
     try {
@@ -135,12 +133,11 @@ export const CadastroMedicamentoScreen: React.FC = () => {
         dosagem: dosagem.trim(),
         formato: formato.trim(),
         viaAdministracao: viaAdministracao.trim(),
-        horario: horario.trim(),
+        horario: formattedHorario,
         estoque: estoqueNum,
       });
 
       if (response.success) {
-        // Retorna automaticamente à tela de Medicamentos
         navigation.goBack();
       } else {
         Alert.alert('Erro', 'Não foi possível salvar o medicamento. Tente novamente.');
@@ -163,7 +160,7 @@ export const CadastroMedicamentoScreen: React.FC = () => {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Botão de voltar (quadrado 50x50 branco com borda arredondada 16px e seta para esquerda) */}
+          {/* Botão Voltar */}
           <TouchableOpacity
             style={styles.backButton}
             activeOpacity={0.7}
@@ -174,13 +171,13 @@ export const CadastroMedicamentoScreen: React.FC = () => {
             <Feather name="arrow-left" size={20} color="#1E1E1E" />
           </TouchableOpacity>
 
-          {/* Título e Subtítulo */}
+          {/* Título */}
           <View style={styles.header}>
             <Text style={styles.title}>Adicionar medicamentos</Text>
             <Text style={styles.subtitle}>Cadastre um novo medicamento.</Text>
           </View>
 
-          {/* Card Principal Branco (Figma: rounded-24px, padding, fundo branco) */}
+          {/* Card Principal */}
           <View style={styles.cardContainer}>
             {/* Campo 1: Nome */}
             <View style={styles.fieldGroup}>
@@ -228,7 +225,7 @@ export const CadastroMedicamentoScreen: React.FC = () => {
               </View>
             </View>
 
-            {/* Campo 3: Seletor Formato */}
+            {/* Campo 3: Formato */}
             <View style={styles.fieldGroup}>
               <Text style={styles.fieldLabel}>Formato</Text>
               <TouchableOpacity
@@ -262,7 +259,7 @@ export const CadastroMedicamentoScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
 
-            {/* Campo 4: Seletor Via de administração */}
+            {/* Campo 4: Via de Administração */}
             <View style={styles.fieldGroup}>
               <Text style={styles.fieldLabel}>Via de administração</Text>
               <TouchableOpacity
@@ -296,35 +293,30 @@ export const CadastroMedicamentoScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
 
-            {/* Campo 5: Seletor Horário */}
+            {/* Campo 5: Horário */}
             <View style={styles.fieldGroup}>
               <Text style={styles.fieldLabel}>Horário</Text>
-              <TouchableOpacity
-                style={styles.inputBox}
-                activeOpacity={0.75}
-                onPress={() => setIsHorarioModalVisible(true)}
-                accessibilityRole="button"
-                accessibilityLabel="Selecione o horário"
-              >
+              <View style={styles.inputBox}>
                 <Feather
                   name="clock"
                   size={18}
                   color="#5D6B63"
                   style={styles.fieldIcon}
                 />
-                <Text
-                  style={[
-                    styles.selectorText,
-                    !horario && styles.placeholderText,
-                  ]}
-                  numberOfLines={1}
-                >
-                  {horario || 'Selecione o horário'}
-                </Text>
-              </TouchableOpacity>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Ex.: 07:45"
+                  placeholderTextColor="#5D6B63"
+                  value={horario}
+                  onChangeText={handleHorarioChange}
+                  keyboardType="number-pad"
+                  maxLength={5}
+                  returnKeyType="next"
+                />
+              </View>
             </View>
 
-            {/* Campo 6: Quantidade em estoque */}
+            {/* Campo 6: Quantidade em Estoque */}
             <View style={styles.fieldGroup}>
               <Text style={styles.fieldLabel}>Quantidade em estoque</Text>
               <View style={styles.inputBox}>
@@ -346,7 +338,7 @@ export const CadastroMedicamentoScreen: React.FC = () => {
               </View>
             </View>
 
-            {/* Botão: Salvar medicamento */}
+            {/* Botão Salvar */}
             <TouchableOpacity
               style={[
                 styles.saveButton,
@@ -368,7 +360,7 @@ export const CadastroMedicamentoScreen: React.FC = () => {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Modal Seletor de Formato */}
+      {/* Modal Formato */}
       <Modal
         visible={isFormatoModalVisible}
         transparent
@@ -414,7 +406,7 @@ export const CadastroMedicamentoScreen: React.FC = () => {
         </TouchableOpacity>
       </Modal>
 
-      {/* Modal Seletor de Via de Administração */}
+      {/* Modal Via de Administração */}
       <Modal
         visible={isViaModalVisible}
         transparent
@@ -451,53 +443,6 @@ export const CadastroMedicamentoScreen: React.FC = () => {
                     {item}
                   </Text>
                   {viaAdministracao === item && (
-                    <Feather name="check" size={18} color={COLORS.primary} />
-                  )}
-                </TouchableOpacity>
-              )}
-            />
-          </View>
-        </TouchableOpacity>
-      </Modal>
-
-      {/* Modal Seletor de Horário */}
-      <Modal
-        visible={isHorarioModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setIsHorarioModalVisible(false)}
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setIsHorarioModalVisible(false)}
-        >
-          <View style={styles.modalContainer}>
-            <Text style={styles.modalTitle}>Selecione o horário</Text>
-            <FlatList
-              data={HORARIOS_PREDEFINIDOS}
-              keyExtractor={(item) => item}
-              showsVerticalScrollIndicator={false}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[
-                    styles.modalOption,
-                    horario === item && styles.modalOptionSelected,
-                  ]}
-                  onPress={() => {
-                    setHorario(item);
-                    setIsHorarioModalVisible(false);
-                  }}
-                >
-                  <Text
-                    style={[
-                      styles.modalOptionText,
-                      horario === item && styles.modalOptionTextSelected,
-                    ]}
-                  >
-                    {item}
-                  </Text>
-                  {horario === item && (
                     <Feather name="check" size={18} color={COLORS.primary} />
                   )}
                 </TouchableOpacity>

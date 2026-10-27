@@ -1,90 +1,70 @@
-import { HomeData, NextMedication, ConfirmedDoseData } from '../types/home';
+import { api } from './api';
+import { sessionStore } from './sessionStore';
+import { ApiMedicamento } from '../types/api';
+import { HomeData, ConfirmedDoseData } from '../types/home';
 import { MedicationItem, MedicationStatus, CreateMedicationDTO, MedicationType } from '../types/medication';
+import { historyService } from './historyService';
+
+// ----- Funções Auxiliares de Data e Sessão -----
+
+const getUserId = async (): Promise<number> => {
+  const user = await sessionStore.restore();
+  if (!user || !user.id) {
+    throw new Error('Utilizador não autenticado na sessão.');
+  }
+  return Number(user.id);
+};
+
+const getUserFirstName = async (): Promise<string> => {
+  try {
+    const user = await sessionStore.restore();
+    if (user && user.nome) {
+      return user.nome.split(' ')[0];
+    }
+  } catch (e) {
+    console.error('Erro ao buscar nome na sessão:', e);
+  }
+  return '';
+};
+
+const parseTimeToTodayDate = (timeStr: string): Date => {
+  const clean = timeStr.trim().replace('h', ':');
+  const parts = clean.split(':');
+  const hours = parseInt(parts[0], 10) || 0;
+  const minutes = parseInt(parts[1], 10) || 0;
+
+  const date = new Date();
+  date.setHours(hours, minutes, 0, 0);
+  return date;
+};
+
+const mapToMedicationItem = (apiMed: ApiMedicamento): MedicationItem => {
+  let tipo: MedicationType = 'comprimido';
+  const formatoLower = (apiMed.formato || '').toLowerCase();
+  if (formatoLower.includes('gota')) tipo = 'gotas';
+  if (formatoLower.includes('capsula') || formatoLower.includes('cápsula')) tipo = 'capsula';
+
+  const proximoHorario = (apiMed.alarmes && apiMed.alarmes.length > 0)
+    ? apiMed.alarmes[0].hora
+    : 'Sem horário';
+
+  const status: MedicationStatus = apiMed.ativo ? 'ativo' : 'inativo';
+
+  return {
+    id: String(apiMed.id),
+    nome: apiMed.nome,
+    dosagem: apiMed.dosagem,
+    forma: apiMed.formato,
+    tipo,
+    viaAdministracao: apiMed.viaAdministracao || '',
+    proximoHorario,
+    estoque: apiMed.quantidadeEstoque,
+    estoqueUnidade: 'unidades',
+    status,
+  };
+};
 
 class MedicationService {
-  private initialStatuses: MedicationStatus[] = ['ativo', 'pausa', 'inativo'];
-
-  private getRandomStatus(forced?: MedicationStatus): MedicationStatus {
-    if (forced) return forced;
-    const index = Math.floor(Math.random() * this.initialStatuses.length);
-    return this.initialStatuses[index];
-  }
-
-  // Persistência local em memória dos medicamentos cadastrados
-  private medications: MedicationItem[] = [
-    {
-      id: 'med_001',
-      nome: 'Fluoxetina',
-      dosagem: '20mg',
-      forma: '1 cápsula',
-      tipo: 'capsula',
-      viaAdministracao: 'Oral',
-      proximoHorario: '10:00',
-      estoque: 14,
-      estoqueUnidade: 'cápsulas',
-      status: 'ativo',
-    },
-    {
-      id: 'med_002',
-      nome: 'Dipirona',
-      dosagem: '500mg',
-      forma: '20 gotas',
-      tipo: 'gotas',
-      viaAdministracao: 'Oral',
-      proximoHorario: '14:30',
-      estoque: 3,
-      estoqueUnidade: 'frascos',
-      status: 'pausa',
-    },
-    {
-      id: 'med_003',
-      nome: 'Losartana Potássica',
-      dosagem: '50mg',
-      forma: '1 comprimido',
-      tipo: 'comprimido',
-      viaAdministracao: 'Oral',
-      proximoHorario: '08:00',
-      estoque: 28,
-      estoqueUnidade: 'comprimidos',
-      status: 'inativo',
-    },
-    {
-      id: 'med_004',
-      nome: 'Amoxicilina',
-      dosagem: '500mg',
-      forma: '1 cápsula',
-      tipo: 'capsula',
-      viaAdministracao: 'Oral',
-      proximoHorario: '12:00',
-      estoque: 8,
-      estoqueUnidade: 'cápsulas',
-      status: 'ativo',
-    },
-    {
-      id: 'med_005',
-      nome: 'Paracetamol',
-      dosagem: '750mg',
-      forma: '1 comprimido',
-      tipo: 'comprimido',
-      viaAdministracao: 'Oral',
-      proximoHorario: '19:00',
-      estoque: 20,
-      estoqueUnidade: 'comprimidos',
-      status: 'pausa',
-    },
-    {
-      id: 'med_006',
-      nome: 'Omeprazol',
-      dosagem: '20mg',
-      forma: '1 cápsula',
-      tipo: 'capsula',
-      viaAdministracao: 'Oral',
-      proximoHorario: '07:00',
-      estoque: 12,
-      estoqueUnidade: 'cápsulas',
-      status: 'inativo',
-    },
-  ];
 
   private listeners: (() => void)[] = [];
 
@@ -95,7 +75,7 @@ class MedicationService {
     };
   }
 
-  private notify() {
+  notify() {
     this.listeners.forEach((listener) => {
       try {
         listener();
@@ -105,152 +85,199 @@ class MedicationService {
     });
   }
 
-  /**
-   * Obtém os dados dinâmicos da Tela Principal.
-   */
-  async getHomeData(): Promise<HomeData> {
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    const proximaDoseTimestamp = Date.now() + (18 * 60 + 32) * 1000;
+  // ----- Chamadas à API -----
 
-    return {
-      userName: 'Ulysses Barreto',
-      hasUnreadNotifications: true,
-      nextMedication: {
-        id: 'med_001',
-        nome: 'Flouxetina 20mg',
-        horario: '10:00',
-        proximaDoseTimestamp,
-      },
-    };
-  }
-
-  /**
-   * Confirma a dose tomada do medicamento.
-   */
-  async confirmDose(medicationId: string): Promise<{ success: boolean; message: string }> {
-    await new Promise((resolve) => setTimeout(resolve, 600));
-    return {
-      success: true,
-      message: 'Dose registrada com sucesso!',
-    };
-  }
-
-  /**
-   * Obtém os dados dinâmicos da dose confirmada e da próxima dose programada.
-   */
-  async getConfirmedDoseData(medicationId?: string): Promise<ConfirmedDoseData> {
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    return {
-      medicamentoNome: 'Flouxetina',
-      quantidade: '1 comprimido',
-      horarioDose: '10:00 h',
-      proximaDoseHorario: '18:00h',
-      hasUnreadNotifications: true,
-    };
-  }
-
-  /**
-   * Obtém a lista dinâmica de medicamentos cadastrados.
-   */
   async getMedications(): Promise<MedicationItem[]> {
-    await new Promise((resolve) => setTimeout(resolve, 150));
-    return [...this.medications];
+    try {
+      const userId = await getUserId();
+      const apiMeds = await api.get<ApiMedicamento[]>(`/api/usuarios/${userId}/medicamentos`);
+      return apiMeds.map(mapToMedicationItem);
+    } catch (error) {
+      console.error('Erro ao buscar medicamentos:', error);
+      return [];
+    }
   }
 
-  /**
-   * Cadastra um novo medicamento e notifica observadores para atualização imediata.
-   */
-  async addMedication(dto: CreateMedicationDTO): Promise<{ success: boolean; medication: MedicationItem }> {
-    await new Promise((resolve) => setTimeout(resolve, 400));
+  async addMedication(dto: CreateMedicationDTO): Promise<{ success: boolean; medication?: MedicationItem; message?: string }> {
+    try {
+      const userId = await getUserId();
+      const horarioFormatado = dto.horario.trim().replace('h', ':');
 
-    // Determina o tipo e unidade a partir do formato
-    let tipo: MedicationType = 'capsula';
-    let estoqueUnidade = 'unidades';
+      const requestBody = {
+        nome: dto.nome.trim(),
+        dosagem: dto.dosagem.trim(),
+        formato: dto.formato.trim(),
+        viaAdministracao: dto.viaAdministracao.trim(),
+        horario: horarioFormatado,
+        quantidadeEstoque: Number(dto.estoque) || 0
+      };
 
-    const formatoLower = dto.formato.toLowerCase();
-    if (formatoLower.includes('gota')) {
-      tipo = 'gotas';
-      estoqueUnidade = 'frascos';
-    } else if (formatoLower.includes('comprimido')) {
-      tipo = 'comprimido';
-      estoqueUnidade = 'comprimidos';
-    } else if (formatoLower.includes('cápsula') || formatoLower.includes('capsula')) {
-      tipo = 'capsula';
-      estoqueUnidade = 'cápsulas';
+      const apiMed = await api.post<ApiMedicamento>(`/api/usuarios/${userId}/medicamentos/completo`, requestBody);
+      this.notify();
+
+      return {
+        success: true,
+        medication: mapToMedicationItem(apiMed)
+      };
+    } catch (error: any) {
+      console.error('Erro ao adicionar medicamento:', error);
+      return { success: false, message: error.message || 'Erro ao adicionar medicamento.' };
+    }
+  }
+
+  async updateMedicationStatus(medicationId: string, newStatus: MedicationStatus): Promise<{ success: boolean; message: string }> {
+    try {
+      const userId = await getUserId();
+      const isAtivo = newStatus === 'ativo';
+
+      await api.patch(`/api/usuarios/${userId}/medicamentos/${medicationId}/status?ativo=${isAtivo}`);
+      this.notify();
+      return { success: true, message: `Status atualizado com sucesso.` };
+    } catch (error: any) {
+      return { success: false, message: error.message || 'Erro ao atualizar status.' };
+    }
+  }
+
+  async deleteMedication(medicationId: string): Promise<{ success: boolean; message: string }> {
+    try {
+      const userId = await getUserId();
+      await api.delete(`/api/usuarios/${userId}/medicamentos/${medicationId}`);
+      this.notify();
+      return { success: true, message: 'Medicamento removido com sucesso.' };
+    } catch (error: any) {
+      return { success: false, message: error.message || 'Erro ao remover medicamento.' };
+    }
+  }
+
+  // ----- Métodos para Home e Histórico -----
+
+  async getHomeData(): Promise<HomeData> {
+    const meds = await this.getMedications();
+
+    let userName = '';
+    let fotoUri: string | undefined = undefined;
+
+    try {
+      const user = await sessionStore.restore();
+      if (user) {
+        if (user.nome) {
+          userName = user.nome.split(' ')[0];
+        }
+        if ((user as any).fotoUri) {
+          fotoUri = (user as any).fotoUri;
+        }
+      }
+    } catch (e) {
+      console.error('Erro ao buscar dados da sessão para a Home:', e);
     }
 
-    const newMedication: MedicationItem = {
-      id: `med_${Date.now()}`,
-      nome: dto.nome.trim(),
-      dosagem: dto.dosagem.trim(),
-      forma: dto.formato.trim(),
-      tipo,
-      viaAdministracao: dto.viaAdministracao.trim(),
-      proximoHorario: dto.horario.trim(),
-      estoque: Number(dto.estoque),
-      estoqueUnidade,
-      status: this.getRandomStatus(), // Status dinâmico e aleatório (ativo, pausa ou inativo)
-    };
+    const activeMeds = meds.filter((m) => m.status === 'ativo');
 
-    // Insere no início da lista para aparecer imediatamente
-    this.medications = [newMedication, ...this.medications];
-    this.notify();
+    if (activeMeds.length === 0) {
+      return {
+        userName,
+        fotoUri,
+        avatarUrl: fotoUri,
+        hasUnreadNotifications: false,
+        nextMedication: undefined,
+      };
+    }
+
+    let takenTodayIds = new Set<string>();
+    try {
+      const todayList = await historyService.getTodayDoses();
+      takenTodayIds = new Set(todayList);
+    } catch (e) {
+      console.error('Erro ao verificar doses tomadas hoje:', e);
+    }
+
+    const mappedMeds = activeMeds.map((med) => {
+      const targetToday = parseTimeToTodayDate(med.proximoHorario || '00:00');
+      let nextTimestamp = targetToday.getTime();
+
+      // Se o horário de hoje já passou ou a dose já foi confirmada hoje, projeta a dose para amanhã
+      if (takenTodayIds.has(med.id) || nextTimestamp <= Date.now()) {
+        const targetTomorrow = new Date(targetToday);
+        targetTomorrow.setDate(targetTomorrow.getDate() + 1);
+        nextTimestamp = targetTomorrow.getTime();
+      }
+
+      return {
+        med,
+        nextTimestamp,
+      };
+    });
+
+    mappedMeds.sort((a, b) => a.nextTimestamp - b.nextTimestamp);
+
+    const nextItem = mappedMeds[0];
+    const nextMed = nextItem ? nextItem.med : undefined;
+    const proximaDoseTimestamp = nextItem ? nextItem.nextTimestamp : 0;
 
     return {
-      success: true,
-      medication: newMedication,
+      userName,
+      fotoUri,
+      avatarUrl: fotoUri,
+      hasUnreadNotifications: false,
+      nextMedication: nextMed
+        ? {
+          id: nextMed.id,
+          nome: `${nextMed.nome} ${nextMed.dosagem}`.trim(),
+          horario: nextMed.proximoHorario || '',
+          proximaDoseTimestamp,
+          dosagem: nextMed.dosagem,
+        }
+        : undefined,
     };
   }
 
-  /**
-   * Atualiza o status de um medicamento.
-   */
-  async updateMedicationStatus(
-    medicationId: string,
-    newStatus: MedicationStatus
-  ): Promise<{ success: boolean; message: string }> {
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    this.medications = this.medications.map((med) =>
-      med.id === medicationId ? { ...med, status: newStatus } : med
-    );
-    this.notify();
-    return {
-      success: true,
-      message: `Status atualizado para ${newStatus}.`,
-    };
-  }
-
-  /**
-   * Obtém os medicamentos programados para uma determinada data.
-   * Conforme especificação:
-   * - Utiliza os medicamentos reais já cadastrados pelo usuário
-   * - Ordena por horário crescente
-   * - Filtra por status ativo/pausa
-   */
   async getMedicationsByDate(date: Date): Promise<MedicationItem[]> {
-    await new Promise((resolve) => setTimeout(resolve, 150));
-    // Retorna os medicamentos ativos e em pausa ordenados pelo horário cadastrado
-    const dayMeds = this.medications.filter((med) => med.status !== 'inativo');
+    const meds = await this.getMedications();
+    const dayMeds = meds.filter((med) => med.status !== 'inativo');
 
-    return [...dayMeds].sort((a, b) => {
+    return dayMeds.sort((a, b) => {
       const timeA = (a.proximoHorario || '00:00').replace('h', ':');
       const timeB = (b.proximoHorario || '00:00').replace('h', ':');
       return timeA.localeCompare(timeB);
     });
   }
 
-  /**
-   * Exclui um medicamento cadastrado.
-   */
-  async deleteMedication(
-    medicationId: string
-  ): Promise<{ success: boolean; message: string }> {
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    this.medications = this.medications.filter((med) => med.id !== medicationId);
-    this.notify();
+  async confirmDose(medicationId: string): Promise<{ success: boolean; message: string }> {
+    try {
+      const userId = await getUserId();
+      const meds = await this.getMedications();
+      const med = meds.find((m) => m.id === medicationId);
+
+      if (med) {
+        await api.patch(`/api/usuarios/${userId}/medicamentos/${medicationId}/dar-baixa?quantidade=1`, {});
+
+        await historyService.registerDose(
+          med.id,
+          med.nome,
+          med.forma || '1 dose',
+          med.proximoHorario || '00:00'
+        );
+
+        this.notify();
+        return { success: true, message: 'Dose registrada e estoque atualizado!' };
+      }
+      return { success: false, message: 'Medicamento não encontrado.' };
+    } catch (e) {
+      console.error('Erro ao registrar dose:', e);
+      return { success: false, message: 'Erro ao registrar dose.' };
+    }
+  }
+
+  async getConfirmedDoseData(medicationId?: string): Promise<ConfirmedDoseData> {
+    const meds = await this.getMedications();
+    const med = medicationId ? meds.find((m) => m.id === medicationId) : meds[0];
+
     return {
-      success: true,
-      message: 'Medicamento removido com sucesso.',
+      medicamentoNome: med ? med.nome : '',
+      quantidade: med ? med.forma : '',
+      horarioDose: med ? (med.proximoHorario || '') : '',
+      proximaDoseHorario: med ? (med.proximoHorario || '') : '',
+      hasUnreadNotifications: false,
     };
   }
 }

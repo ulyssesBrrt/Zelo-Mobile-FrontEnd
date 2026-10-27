@@ -7,7 +7,9 @@ import {
   TouchableOpacity,
   Platform,
   Alert,
-  ActivityIndicator,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -20,31 +22,40 @@ import { sosService } from '../../services/sosService';
 export const SOSScreen: React.FC = () => {
   const navigation = useNavigation<SOSScreenNavigationProp>();
 
+  const [contacts, setContacts] = useState<EmergencyContact[]>([]);
   const [contatoPrincipal, setContatoPrincipal] = useState<EmergencyContact | null>(null);
-  const [samuInfo, setSamuInfo] = useState<{ nome: string; numero: string; rotulo: string }>(
+  const [samuInfo] = useState<{ nome: string; numero: string; rotulo: string }>(
     sosService.getSamuData()
   );
-  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isCalling, setIsCalling] = useState<boolean>(false);
+  const [isAddModalVisible, setIsAddModalVisible] = useState<boolean>(false);
 
-  // Carrega os dados do contato de emergência do usuário
+  // Campos do formulário
+  const [nome, setNome] = useState('');
+  const [parentesco, setParentesco] = useState('');
+  const [telefone, setTelefone] = useState('');
+
+  // Carrega os dados dos contatos
   const loadContacts = useCallback(async () => {
     try {
-      setIsLoading(true);
-      const contact = await sosService.getContatoPrincipal();
-      setContatoPrincipal(contact);
+      const list = await sosService.getContacts();
+      setContacts(list);
+
+      const main = await sosService.getContatoPrincipal();
+      setContatoPrincipal(main || (list.length > 0 ? list[0] : null));
     } catch {
       Alert.alert('Erro', 'Não foi possível carregar os dados de contato de emergência.');
-    } finally {
-      setIsLoading(false);
     }
   }, []);
 
   useEffect(() => {
     loadContacts();
+    const unsubscribe = sosService.subscribe(() => {
+      loadContacts();
+    });
+    return () => unsubscribe();
   }, [loadContacts]);
 
-  // Navegação consistente com as outras telas do projeto
   const navigateTo = (routeName: keyof RootStackParamList, params?: any) => {
     const routeNames = navigation.getState()?.routeNames || [];
     if (routeNames.includes(routeName)) {
@@ -76,18 +87,58 @@ export const SOSScreen: React.FC = () => {
     }
   };
 
-  // Botão "Ligar" para Contato Principal
-  const handleLigarContatoPrincipal = async () => {
-    if (!contatoPrincipal?.telefone) {
-      Alert.alert('Aviso', 'Nenhum telefone cadastrado para o contato principal.');
+  // Botão "Ligar" para Contato
+  const handleLigarContato = async (phone?: string) => {
+    if (!phone) {
+      Alert.alert('Aviso', 'Nenhum telefone cadastrado para este contato.');
       return;
     }
-    await sosService.makePhoneCall(contatoPrincipal.telefone);
+    await sosService.makePhoneCall(phone);
   };
 
   // Botão "Ligar" para SAMU (192)
   const handleLigarSamu = async () => {
     await sosService.makePhoneCall(samuInfo.numero);
+  };
+
+  // Salvar Novo Contato
+  const handleAddContact = async () => {
+    if (!nome.trim() || !telefone.trim()) {
+      Alert.alert('Atenção', 'Informe pelo menos o nome e o telefone do contato.');
+      return;
+    }
+
+    const response = await sosService.addContact({
+      nome,
+      parentesco: parentesco || 'Contato',
+      telefone,
+      principal: contacts.length === 0,
+    });
+
+    if (response.success) {
+      Alert.alert('Sucesso', 'Contato de emergência adicionado com sucesso!');
+      setNome('');
+      setParentesco('');
+      setTelefone('');
+      setIsAddModalVisible(false);
+    } else {
+      Alert.alert('Erro', response.message || 'Falha ao salvar contato.');
+    }
+  };
+
+  // Excluir Contato
+  const handleDeleteContact = (id?: string, name?: string) => {
+    if (!id) return;
+    Alert.alert('Excluir Contato', `Deseja remover ${name || 'este contato'} dos contatos de emergência?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Remover',
+        style: 'destructive',
+        onPress: async () => {
+          await sosService.deleteContact(id);
+        },
+      },
+    ]);
   };
 
   return (
@@ -113,7 +164,6 @@ export const SOSScreen: React.FC = () => {
               accessibilityRole="button"
               accessibilityLabel="Acionar SOS: Iniciar ligação de emergência para o SAMU e enviar mensagem de socorro no WhatsApp"
             >
-              {/* Ícone de sirene/alerta dentro do círculo branco */}
               <View style={styles.sirenCircle}>
                 <MaterialCommunityIcons
                   name="alarm-light-outline"
@@ -121,13 +171,11 @@ export const SOSScreen: React.FC = () => {
                   color="#E42C24"
                 />
               </View>
-
-              {/* Texto "Acionar SOS" */}
               <Text style={styles.sosButtonText}>Acionar SOS</Text>
             </TouchableOpacity>
           </View>
 
-          {/* Chamada de Alerta com Ícone e Texto Explicativo */}
+          {/* Chamada de Alerta */}
           <View style={styles.alertBox}>
             <View style={styles.alertIconCircle}>
               <Feather name="alert-circle" size={18} color="#E42C24" />
@@ -139,57 +187,20 @@ export const SOSScreen: React.FC = () => {
 
           {/* Seção: Contatos de emergência */}
           <View style={styles.contactsSection}>
-            <Text style={styles.sectionTitle}>Contatos de emergência</Text>
-
-            {/* Card 1: Contato Principal */}
-            <View style={styles.contactCard}>
-              {/* Ícone Avatar em fundo verde claro #C9E2D1 */}
-              <View style={styles.avatarBoxGreen}>
-                <Feather name="user" size={32} color="#77B28C" />
-              </View>
-
-              {/* Informações: Rótulo, Nome, Telefone com ícone */}
-              <View style={styles.contactInfo}>
-                <Text style={styles.contactLabel}>
-                  {contatoPrincipal?.parentesco || 'Contato principal'}
-                </Text>
-                <Text style={styles.contactName} numberOfLines={1}>
-                  {contatoPrincipal?.nome || 'Maria Pereira'}
-                </Text>
-                <View style={styles.phoneRow}>
-                  <Feather
-                    name="phone"
-                    size={12}
-                    color="#5D6B63"
-                    style={styles.phoneIcon}
-                  />
-                  <Text style={styles.phoneText}>
-                    {contatoPrincipal?.telefone || '(74) 9918-3421'}
-                  </Text>
-                </View>
-              </View>
-
-              {/* Botão "Ligar" verde suave com ícone */}
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitle}>Contatos de emergência</Text>
               <TouchableOpacity
-                style={styles.callButtonGreen}
-                activeOpacity={0.75}
-                onPress={handleLigarContatoPrincipal}
-                accessibilityRole="button"
-                accessibilityLabel={`Ligar para ${contatoPrincipal?.nome || 'contato principal'}`}
+                style={styles.addButton}
+                onPress={() => setIsAddModalVisible(true)}
+                activeOpacity={0.7}
               >
-                <Feather
-                  name="phone"
-                  size={14}
-                  color="#77B28C"
-                  style={styles.callIcon}
-                />
-                <Text style={styles.callTextGreen}>Ligar</Text>
+                <Feather name="plus" size={16} color={COLORS.primary} />
+                <Text style={styles.addButtonText}>Adicionar</Text>
               </TouchableOpacity>
             </View>
 
-            {/* Card 2: SAMU (192) */}
+            {/* SAMU 192 (Sempre visível) */}
             <View style={styles.contactCard}>
-              {/* Ícone Estrela da Vida / Emergência em fundo vermelho suave #F4ADAA */}
               <View style={styles.avatarBoxRed}>
                 <MaterialCommunityIcons
                   name="hospital-box-outline"
@@ -198,7 +209,6 @@ export const SOSScreen: React.FC = () => {
                 />
               </View>
 
-              {/* Informações: Rótulo, Nome SAMU, Número 192 com ícone */}
               <View style={styles.contactInfo}>
                 <Text style={styles.contactLabel}>{samuInfo.rotulo}</Text>
                 <Text style={styles.contactName} numberOfLines={1}>
@@ -215,7 +225,6 @@ export const SOSScreen: React.FC = () => {
                 </View>
               </View>
 
-              {/* Botão "Ligar" vermelho suave com ícone */}
               <TouchableOpacity
                 style={styles.callButtonRed}
                 activeOpacity={0.75}
@@ -232,32 +241,107 @@ export const SOSScreen: React.FC = () => {
                 <Text style={styles.callTextRed}>Ligar</Text>
               </TouchableOpacity>
             </View>
+
+            {/* Contatos Pessoais Registrados */}
+            {contacts.length === 0 ? (
+              <View style={styles.contactCard}>
+                <View style={styles.avatarBoxGreen}>
+                  <Feather name="user" size={32} color="#77B28C" />
+                </View>
+
+                <View style={styles.contactInfo}>
+                  <Text style={styles.contactLabel}>Contato principal</Text>
+                  <Text style={styles.contactName} numberOfLines={1}>
+                    Nenhum contato cadastrado
+                  </Text>
+                  <View style={styles.phoneRow}>
+                    <Feather
+                      name="phone"
+                      size={12}
+                      color="#5D6B63"
+                      style={styles.phoneIcon}
+                    />
+                    <Text style={styles.phoneText}>—</Text>
+                  </View>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.callButtonGreen}
+                  activeOpacity={0.75}
+                  onPress={() => setIsAddModalVisible(true)}
+                >
+                  <Feather name="plus" size={14} color="#77B28C" style={styles.callIcon} />
+                  <Text style={styles.callTextGreen}>Adicionar</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              contacts.map((c) => (
+                <View key={c.id || c.telefone} style={styles.contactCard}>
+                  <View style={styles.avatarBoxGreen}>
+                    <Feather name="user" size={32} color="#77B28C" />
+                  </View>
+
+                  <View style={styles.contactInfo}>
+                    <Text style={styles.contactLabel}>
+                      {c.parentesco || 'Contato de confiança'}
+                    </Text>
+                    <Text style={styles.contactName} numberOfLines={1}>
+                      {c.nome}
+                    </Text>
+                    <View style={styles.phoneRow}>
+                      <Feather
+                        name="phone"
+                        size={12}
+                        color="#5D6B63"
+                        style={styles.phoneIcon}
+                      />
+                      <Text style={styles.phoneText}>{c.telefone}</Text>
+                    </View>
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.callButtonGreen}
+                    activeOpacity={0.75}
+                    onPress={() => handleLigarContato(c.telefone)}
+                  >
+                    <Feather
+                      name="phone"
+                      size={14}
+                      color="#77B28C"
+                      style={styles.callIcon}
+                    />
+                    <Text style={styles.callTextGreen}>Ligar</Text>
+                  </TouchableOpacity>
+
+                  {c.id && (
+                    <TouchableOpacity
+                      style={styles.deleteButton}
+                      onPress={() => handleDeleteContact(c.id, c.nome)}
+                    >
+                      <Feather name="trash-2" size={16} color="#B8C0BC" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              ))
+            )}
           </View>
         </ScrollView>
 
-        {/* Barra de Navegação Inferior Fixa/Flutuante - Consistente com Home, Medicamentos e Agenda */}
+        {/* Barra de Navegação Inferior Flutuante */}
         <View style={styles.bottomBarContainer}>
           <View style={styles.bottomBar}>
-            {/* Tab: Home */}
             <TouchableOpacity
               style={styles.tabItem}
               activeOpacity={0.7}
               onPress={() => navigateTo('Home')}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: false }}
-              accessibilityLabel="Tela Principal"
             >
               <Feather name="home" size={22} color={COLORS.textMuted} />
             </TouchableOpacity>
 
-            {/* Tab: Medicamentos */}
             <TouchableOpacity
               style={styles.tabItem}
               activeOpacity={0.7}
               onPress={() => navigateTo('Medicamentos')}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: false }}
-              accessibilityLabel="Medicamentos"
             >
               <MaterialCommunityIcons
                 name="pill"
@@ -266,35 +350,88 @@ export const SOSScreen: React.FC = () => {
               />
             </TouchableOpacity>
 
-            {/* Tab: Agenda */}
             <TouchableOpacity
               style={styles.tabItem}
               activeOpacity={0.7}
               onPress={() => navigateTo('Agenda')}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: false }}
-              accessibilityLabel="Agenda"
             >
               <Feather name="calendar" size={22} color={COLORS.textMuted} />
             </TouchableOpacity>
 
-            {/* Tab: Perfil */}
             <TouchableOpacity
               style={styles.tabItem}
               activeOpacity={0.7}
               onPress={() => navigateTo('Perfil')}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: false }}
-              accessibilityLabel="Perfil"
             >
               <Feather name="user" size={22} color={COLORS.textMuted} />
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* Modal para Adicionar Contato */}
+        <Modal
+          visible={isAddModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setIsAddModalVisible(false)}
+        >
+          <KeyboardAvoidingView
+            style={styles.modalOverlay}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Novo Contato de Emergência</Text>
+                <TouchableOpacity onPress={() => setIsAddModalVisible(false)}>
+                  <Feather name="x" size={20} color="#5D6B63" />
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.inputLabel}>Nome Completo</Text>
+              <TextInput
+                style={styles.inputField}
+                value={nome}
+                onChangeText={setNome}
+                placeholder="Ex: Maria Silva"
+              />
+
+              <Text style={styles.inputLabel}>Parentesco / Relação</Text>
+              <TextInput
+                style={styles.inputField}
+                value={parentesco}
+                onChangeText={setParentesco}
+                placeholder="Ex: Filha, Cuidador, Médico"
+              />
+
+              <Text style={styles.inputLabel}>Telefone com DDD</Text>
+              <TextInput
+                style={styles.inputField}
+                value={telefone}
+                onChangeText={setTelefone}
+                placeholder="Ex: (74) 99999-8888"
+                keyboardType="phone-pad"
+              />
+
+              <View style={styles.modalButtonsRow}>
+                <TouchableOpacity
+                  style={styles.modalCancelButton}
+                  onPress={() => setIsAddModalVisible(false)}
+                >
+                  <Text style={styles.modalCancelText}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.modalSaveButton} onPress={handleAddContact}>
+                  <Text style={styles.modalSaveText}>Salvar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
       </View>
     </SafeAreaView>
   );
 };
+
+export default SOSScreen;
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -308,7 +445,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 24,
     paddingTop: 16,
-    paddingBottom: 110, // Espaço para a barra de navegação inferior
+    paddingBottom: 110,
   },
   header: {
     marginBottom: 26,
@@ -391,12 +528,29 @@ const styles = StyleSheet.create({
   contactsSection: {
     width: '100%',
   },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
   sectionTitle: {
     fontSize: 16,
     fontWeight: '700',
     color: '#1E1E1E',
     lineHeight: 24,
-    marginBottom: 14,
+  },
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  addButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.primary,
   },
   contactCard: {
     height: 100,
@@ -496,6 +650,10 @@ const styles = StyleSheet.create({
   callIcon: {
     marginRight: 2,
   },
+  deleteButton: {
+    paddingLeft: 8,
+    paddingVertical: 6,
+  },
   bottomBarContainer: {
     position: 'absolute',
     bottom: 12,
@@ -528,5 +686,74 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalContent: {
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1E1E1E',
+  },
+  inputLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#5D6B63',
+    marginBottom: 4,
+    marginTop: 8,
+  },
+  inputField: {
+    backgroundColor: '#F9FAFA',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 14,
+    color: '#1E1E1E',
+  },
+  modalButtonsRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+    marginTop: 16,
+  },
+  modalCancelButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+  },
+  modalCancelText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#5D6B63',
+  },
+  modalSaveButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: COLORS.primary,
+  },
+  modalSaveText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
 });

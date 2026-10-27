@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { useAuth } from '../../context/AuthContext';
 import {
   View,
   Text,
@@ -22,6 +23,8 @@ import { validateLoginForm } from '../../utils/validation';
 
 export const LoginScreen: React.FC = () => {
   const navigation = useNavigation<LoginScreenNavigationProp>();
+  // Aqui pegamos a função signIn do AuthContext
+  const { signIn } = useAuth();
 
   const [formData, setFormData] = useState<LoginFormData>({
     email: '',
@@ -68,8 +71,9 @@ export const LoginScreen: React.FC = () => {
         senha: formData.senha,
       });
 
-      if (response.success) {
-        navigation.navigate('Home');
+      if (response.success && response.user) {
+        // Substituímos o navigation.navigate pelo signIn do contexto
+        await signIn(response.user);
       } else {
         const errorMsg =
           response.message || 'Credenciais inválidas. Verifique e-mail e senha.';

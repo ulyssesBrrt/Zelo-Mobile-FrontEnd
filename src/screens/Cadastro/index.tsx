@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { useAuth } from '../../context/AuthContext';
 import {
   View,
   Text,
@@ -22,6 +23,8 @@ import { validateRegisterForm } from '../../utils/validation';
 
 export const CadastroScreen: React.FC = () => {
   const navigation = useNavigation<CadastroScreenNavigationProp>();
+  // Aqui pegamos a função signIn do AuthContext
+  const { signIn } = useAuth();
 
   const [formData, setFormData] = useState<RegisterFormData>({
     nome: '',
@@ -70,14 +73,13 @@ export const CadastroScreen: React.FC = () => {
         senha: formData.senha,
       });
 
-      if (response.success) {
+      if (response.success && response.user) {
         setSuccessMessage('Conta criada com sucesso!');
         Alert.alert('Sucesso', 'Sua conta foi criada com sucesso!', [
           {
             text: 'Acessar início',
-            onPress: () => {
-              navigation.navigate('Home');
-            },
+            // Ao clicar, faz login automático e vai para a Home
+            onPress: () => signIn(response.user!),
           },
         ]);
       } else {

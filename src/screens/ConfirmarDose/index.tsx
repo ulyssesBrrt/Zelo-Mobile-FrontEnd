@@ -109,10 +109,10 @@ export const ConfirmarDoseScreen: React.FC = () => {
             </View>
             <View style={styles.medicationInfo}>
               <Text style={styles.medicationName}>
-                {doseData?.medicamentoNome || 'Flouxetina'}
+                {doseData?.medicamentoNome || '—'}
               </Text>
               <Text style={styles.medicationQuantity}>
-                {doseData?.quantidade || '1 comprimido'}
+                {doseData?.quantidade || '—'}
               </Text>
               <View style={styles.timeRow}>
                 <Feather
@@ -122,7 +122,7 @@ export const ConfirmarDoseScreen: React.FC = () => {
                   style={styles.timeIcon}
                 />
                 <Text style={styles.timeText}>
-                  {doseData?.horarioDose || '11:53 h'}
+                  {doseData?.horarioDose || '—'}
                 </Text>
               </View>
             </View>
@@ -146,7 +146,7 @@ export const ConfirmarDoseScreen: React.FC = () => {
             <View style={styles.nextDoseInfo}>
               <Text style={styles.nextDoseLabel}>Próxima dose</Text>
               <Text style={styles.nextDoseTime}>
-                {doseData?.proximaDoseHorario || '18:00h'}
+                {doseData?.proximaDoseHorario || '—'}
               </Text>
             </View>
           </View>

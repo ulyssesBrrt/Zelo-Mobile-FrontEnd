@@ -1,102 +1,22 @@
+import { api } from './api';
+import { sessionStore } from './sessionStore';
 import { DoseRecord, DayDoseSummary, PeriodDoseSummary, DoseStatus } from '../types/history';
-import { medicationService } from './medicationService';
 
 const DIAS_ABREV = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'];
 
+// Interface para os dados recebidos do Spring Boot
+interface ApiRegistroDose {
+  id: number;
+  medicamentoId: number;
+  nomeMedicamento: string;
+  quantidade: string;
+  horario: string;
+  dataRegistro: string;
+  status: string;
+}
+
 class HistoryService {
-  private records: DoseRecord[] = [];
   private listeners: (() => void)[] = [];
-  private initialized: boolean = false;
-
-  constructor() {
-    this.initDefaultRecords();
-  }
-
-  private initDefaultRecords() {
-    if (this.initialized) return;
-    this.initialized = true;
-
-    const today = new Date();
-    const formatDate = (d: Date) =>
-      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-
-    const todayStr = formatDate(today);
-
-    // Registros de Hoje correspondentes ao Figma (1 tomado, 2 pendentes, 1 não tomado como exemplo dinâmico)
-    this.records = [
-      {
-        id: 'rec_today_01',
-        medicationId: 'med_002',
-        nome: 'Dipirona',
-        quantidade: '1 comprimido',
-        horario: '08:00',
-        data: todayStr,
-        status: 'tomado',
-      },
-      {
-        id: 'rec_today_02',
-        medicationId: 'med_002',
-        nome: 'Dipirona',
-        quantidade: '1 comprimido',
-        horario: '12:00',
-        data: todayStr,
-        status: 'pendente',
-      },
-      {
-        id: 'rec_today_03',
-        medicationId: 'med_002',
-        nome: 'Dipirona',
-        quantidade: '1 comprimido',
-        horario: '18:00',
-        data: todayStr,
-        status: 'pendente',
-      },
-      {
-        id: 'rec_today_04',
-        medicationId: 'med_002',
-        nome: 'Dipirona',
-        quantidade: '1 comprimido',
-        horario: '22:00',
-        data: todayStr,
-        status: 'nao_tomado',
-      },
-    ];
-
-    // Popula dias anteriores da semana/mês dinamicamente para alimentar o filtro Semana e Mês
-    for (let i = 1; i <= 28; i++) {
-      const pastDate = new Date(today);
-      pastDate.setDate(today.getDate() - i);
-      const dateStr = formatDate(pastDate);
-
-      // Gera de 2 a 4 doses distribuídas
-      const tomadosCount = (i % 3) + 1; // 1, 2 ou 3 tomados
-      const pendentesCount = i % 2 === 0 ? 1 : 0; // 0 ou 1 pendente
-
-      for (let t = 0; t < tomadosCount; t++) {
-        this.records.push({
-          id: `rec_${dateStr}_t_${t}`,
-          medicationId: 'med_001',
-          nome: t === 0 ? 'Fluoxetina' : 'Dipirona',
-          quantidade: t === 0 ? '1 cápsula' : '1 comprimido',
-          horario: t === 0 ? '08:00' : '14:00',
-          data: dateStr,
-          status: 'tomado',
-        });
-      }
-
-      for (let p = 0; p < pendentesCount; p++) {
-        this.records.push({
-          id: `rec_${dateStr}_p_${p}`,
-          medicationId: 'med_003',
-          nome: 'Losartana Potássica',
-          quantidade: '1 comprimido',
-          horario: '20:00',
-          data: dateStr,
-          status: 'pendente',
-        });
-      }
-    }
-  }
 
   subscribe(listener: () => void): () => void {
     this.listeners.push(listener);
@@ -115,34 +35,83 @@ class HistoryService {
     });
   }
 
-  /**
-   * Registra uma nova dose tomada (ex: chamada de ConfirmarDose)
-   */
-  async registerDose(medicationId: string, nome: string, quantidade: string, horario: string): Promise<void> {
-    const today = new Date();
-    const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  // Recupera o ID do utilizador logado
+  private async getUserId(): Promise<number> {
+    const user = await sessionStore.restore();
+    if (!user || !user.id) {
+      throw new Error('Utilizador não autenticado na sessão.');
+    }
+    return Number(user.id);
+  }
 
-    this.records.unshift({
-      id: `rec_${Date.now()}`,
-      medicationId,
-      nome,
-      quantidade,
-      horario,
-      data: dateStr,
-      status: 'tomado',
-    });
+  // Busca todos os registos reais do utilizador no MySQL
+  private async fetchAllRecords(): Promise<DoseRecord[]> {
+    try {
+      const userId = await this.getUserId();
+      const apiRecords = await api.get<ApiRegistroDose[]>(`/api/usuarios/${userId}/historico`);
 
-    this.notify();
+      return apiRecords.map(record => ({
+        id: String(record.id),
+        medicationId: String(record.medicamentoId),
+        nome: record.nomeMedicamento,
+        quantidade: record.quantidade,
+        horario: record.horario,
+        data: record.dataRegistro,
+        status: record.status as DoseStatus
+      }));
+    } catch (error) {
+      console.error('Erro ao buscar histórico:', error);
+      return [];
+    }
   }
 
   /**
-   * Obtém os registros do dia selecionado (ex: Hoje)
+   * Retorna os IDs dos medicamentos cujas doses foram tomadas na data de hoje
+   */
+  async getTodayDoses(): Promise<string[]> {
+    const records = await this.fetchAllRecords();
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+    return records
+      .filter((r) => r.data === todayStr && r.status === 'tomado')
+      .map((r) => r.medicationId);
+  }
+
+  /**
+   * Grava a dose tomada no MySQL através do Controller RegistroDoseController
+   */
+  async registerDose(medicationId: string, nome: string, quantidade: string, horario: string): Promise<void> {
+    try {
+      const userId = await this.getUserId();
+      const today = new Date();
+
+      const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+      const requestBody = {
+        medicamentoId: Number(medicationId),
+        nome: nome,
+        quantidade: quantidade,
+        horario: horario,
+        data: dateStr,
+        status: 'tomado'
+      };
+
+      await api.post(`/api/usuarios/${userId}/historico`, requestBody);
+      this.notify();
+    } catch (error) {
+      console.error('Erro ao registrar dose:', error);
+    }
+  }
+
+  /**
+   * Obtém os registos e filtra pelo dia selecionado
    */
   async getDayRecords(date: Date): Promise<{ records: DoseRecord[]; summary: PeriodDoseSummary }> {
-    await new Promise((resolve) => setTimeout(resolve, 100));
-
+    const records = await this.fetchAllRecords();
     const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-    const dayRecords = this.records.filter((r) => r.data === dateStr);
+
+    const dayRecords = records.filter((r) => r.data === dateStr);
 
     let totalTomadas = 0;
     let totalPendentes = 0;
@@ -154,26 +123,21 @@ class HistoryService {
       else if (r.status === 'nao_tomado') totalNaoTomadas++;
     });
 
-    // Ordena os registros por horário
     dayRecords.sort((a, b) => a.horario.localeCompare(b.horario));
 
     return {
       records: dayRecords,
-      summary: {
-        totalTomadas,
-        totalPendentes,
-        totalNaoTomadas,
-      },
+      summary: { totalTomadas, totalPendentes, totalNaoTomadas },
     };
   }
 
   /**
-   * Obtém o resumo dos 7 dias da semana a partir de uma data de referência
+   * Constrói o calendário semanal com base nos dados do MySQL
    */
   async getWeekSummary(startDate: Date): Promise<{ days: DayDoseSummary[]; summary: PeriodDoseSummary }> {
-    await new Promise((resolve) => setTimeout(resolve, 100));
-
+    const records = await this.fetchAllRecords();
     const days: DayDoseSummary[] = [];
+
     let totalTomadas = 0;
     let totalPendentes = 0;
     let totalNaoTomadas = 0;
@@ -183,7 +147,7 @@ class HistoryService {
       curDate.setDate(startDate.getDate() + i);
 
       const dateStr = `${curDate.getFullYear()}-${String(curDate.getMonth() + 1).padStart(2, '0')}-${String(curDate.getDate()).padStart(2, '0')}`;
-      const dayRecs = this.records.filter((r) => r.data === dateStr);
+      const dayRecs = records.filter((r) => r.data === dateStr);
 
       let tomados = 0;
       let pendentes = 0;
@@ -212,22 +176,18 @@ class HistoryService {
 
     return {
       days,
-      summary: {
-        totalTomadas,
-        totalPendentes,
-        totalNaoTomadas,
-      },
+      summary: { totalTomadas, totalPendentes, totalNaoTomadas },
     };
   }
 
   /**
-   * Obtém o resumo consolidado de um mês
+   * Constrói o calendário mensal com base nos dados do MySQL
    */
   async getMonthSummary(year: number, monthIndex: number): Promise<{ days: DayDoseSummary[]; summary: PeriodDoseSummary }> {
-    await new Promise((resolve) => setTimeout(resolve, 100));
-
+    const records = await this.fetchAllRecords();
     const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
     const days: DayDoseSummary[] = [];
+
     let totalTomadas = 0;
     let totalPendentes = 0;
     let totalNaoTomadas = 0;
@@ -235,7 +195,7 @@ class HistoryService {
     for (let d = 1; d <= daysInMonth; d++) {
       const curDate = new Date(year, monthIndex, d);
       const dateStr = `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      const dayRecs = this.records.filter((r) => r.data === dateStr);
+      const dayRecs = records.filter((r) => r.data === dateStr);
 
       let tomados = 0;
       let pendentes = 0;
@@ -264,11 +224,7 @@ class HistoryService {
 
     return {
       days,
-      summary: {
-        totalTomadas,
-        totalPendentes,
-        totalNaoTomadas,
-      },
+      summary: { totalTomadas, totalPendentes, totalNaoTomadas },
     };
   }
 }

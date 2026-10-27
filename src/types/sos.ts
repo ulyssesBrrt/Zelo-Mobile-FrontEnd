@@ -1,8 +1,9 @@
 export interface EmergencyContact {
-  id: string;
+  id?: string;
   nome: string;
   telefone: string;
   parentesco?: string;
+  principal?: boolean;
 }
 
 export interface EmergencyState {

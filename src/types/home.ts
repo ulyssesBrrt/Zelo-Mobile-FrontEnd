@@ -9,8 +9,9 @@ export interface NextMedication {
 export interface HomeData {
   userName: string;
   avatarUrl?: string;
+  fotoUri?: string;
   hasUnreadNotifications: boolean;
-  nextMedication: NextMedication;
+  nextMedication?: NextMedication;
 }
 
 export interface ConfirmedDoseData {

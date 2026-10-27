@@ -14,10 +14,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { COLORS } from '../../constants/theme';
-import { PerfilScreenNavigationProp } from '../../types/navigation';
+import { PerfilScreenNavigationProp, RootStackParamList } from '../../types/navigation';
 import { profileService } from '../../services/profileService';
-import { UserProfile, HealthInfo } from '../../types/profile';
+import { medicationService } from '../../services/medicationService';
+import { sessionStore } from '../../services/sessionStore';
+import { UserProfile } from '../../types/profile';
 
 interface PerfilScreenProps {
   navigation: PerfilScreenNavigationProp;
@@ -57,6 +60,18 @@ export const PerfilScreen: React.FC<PerfilScreenProps> = ({ navigation }) => {
     };
   }, []);
 
+  const navigateTo = (routeName: keyof RootStackParamList, params?: any) => {
+    const routeNames = navigation.getState()?.routeNames || [];
+    if (routeNames.includes(routeName)) {
+      navigation.navigate(routeName as any, params);
+    } else {
+      Alert.alert(
+        'Navegação',
+        `A tela "${routeName}" foi preparada e será implementada posteriormente.`
+      );
+    }
+  };
+
   const handleOpenEditPersonal = () => {
     if (!profile) return;
     setEditNome(profile.nome);
@@ -81,10 +96,12 @@ export const PerfilScreen: React.FC<PerfilScreenProps> = ({ navigation }) => {
 
   const handleOpenEditHealth = () => {
     if (!profile) return;
-    setEditDataNasc(profile.healthInfo.dataNascimento);
-    setEditTipoSanguineo(profile.healthInfo.tipoSanguineo);
-    setEditAlergias(profile.healthInfo.alergias);
-    setEditCondicaoSaude(profile.healthInfo.condicaoSaude);
+    setEditDataNasc(
+      profile.healthInfo?.dataNascimento || (profile as any)?.dataNascimento || ''
+    );
+    setEditTipoSanguineo(profile.healthInfo?.tipoSanguineo || '');
+    setEditAlergias(profile.healthInfo?.alergias || '');
+    setEditCondicaoSaude(profile.healthInfo?.condicaoSaude || '');
     setIsEditHealthModalOpen(true);
   };
 
@@ -99,29 +116,46 @@ export const PerfilScreen: React.FC<PerfilScreenProps> = ({ navigation }) => {
     Alert.alert('Sucesso', 'Informações de saúde atualizadas com sucesso!');
   };
 
-  const handleChangePhoto = () => {
-    Alert.alert(
-      'Foto de Perfil',
-      'Escolha uma ação para alterar sua foto de perfil:',
-      [
-        {
-          text: 'Restaurar foto padrão',
-          onPress: async () => {
-            await profileService.updatePhoto(undefined);
-            Alert.alert('Foto', 'Foto restaurada para a foto padrão.');
-          },
-        },
-        {
-          text: 'Simular envio de nova foto',
-          onPress: async () => {
-            // Em ambiente móvel sem biblioteca nativa adicional de galeria, atualiza para registro salvo
-            await profileService.updatePhoto('custom_photo_set');
-            Alert.alert('Sucesso', 'Nova foto de perfil selecionada com sucesso!');
-          },
-        },
-        { text: 'Cancelar', style: 'cancel' },
-      ]
-    );
+  const handleChangePhoto = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Permissão Necessária',
+          'Precisamos de permissão para acessar a galeria de fotos.'
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+
+        // Atualiza na sessão local (AsyncStorage)
+        await sessionStore.updateFoto(asset.uri);
+
+        // Envia a imagem para o serviço de perfil
+        await profileService.updatePhoto(
+          asset.uri,
+          asset.fileName || 'profile.jpg',
+          asset.mimeType || 'image/jpeg'
+        );
+
+        // Notifica inscritos para atualizar a Home
+        medicationService.notify();
+
+        Alert.alert('Sucesso', 'Foto de perfil atualizada com sucesso!');
+      }
+    } catch (error) {
+      console.error('Erro ao selecionar foto:', error);
+      Alert.alert('Aviso', 'A foto foi salva apenas localmente no dispositivo.');
+    }
   };
 
   const handleOpenSettings = () => {
@@ -152,7 +186,7 @@ export const PerfilScreen: React.FC<PerfilScreenProps> = ({ navigation }) => {
             <TouchableOpacity
               style={styles.notificationButton}
               activeOpacity={0.7}
-              onPress={() => navigation.navigate('Notificacoes')}
+              onPress={() => navigateTo('Notificacoes')}
               accessibilityRole="button"
               accessibilityLabel="Ir para Notificações"
             >
@@ -186,7 +220,7 @@ export const PerfilScreen: React.FC<PerfilScreenProps> = ({ navigation }) => {
             </TouchableOpacity>
           </View>
 
-          {/* Cartão 1: Informações Pessoais (Nome completo, E-mail, Telefone) */}
+          {/* Cartão 1: Informações Pessoais */}
           <View style={styles.card}>
             {/* Nome Completo */}
             <View style={styles.itemRow}>
@@ -262,7 +296,9 @@ export const PerfilScreen: React.FC<PerfilScreenProps> = ({ navigation }) => {
               <View style={styles.itemTextContainer}>
                 <Text style={styles.itemLabel}>Data de nascimento</Text>
                 <Text style={styles.itemValue}>
-                  {profile?.healthInfo.dataNascimento || '—'}
+                  {profile?.healthInfo?.dataNascimento ||
+                    (profile as any)?.dataNascimento ||
+                    '—'}
                 </Text>
               </View>
             </View>
@@ -279,7 +315,7 @@ export const PerfilScreen: React.FC<PerfilScreenProps> = ({ navigation }) => {
               <View style={styles.itemTextContainer}>
                 <Text style={styles.itemLabel}>Tipo sanguíneo</Text>
                 <Text style={styles.itemValue}>
-                  {profile?.healthInfo.tipoSanguineo || '—'}
+                  {profile?.healthInfo?.tipoSanguineo || '—'}
                 </Text>
               </View>
             </View>
@@ -292,7 +328,7 @@ export const PerfilScreen: React.FC<PerfilScreenProps> = ({ navigation }) => {
               <View style={styles.itemTextContainer}>
                 <Text style={styles.itemLabel}>Alergias</Text>
                 <Text style={styles.itemValue}>
-                  {profile?.healthInfo.alergias || 'Nenhuma informada'}
+                  {profile?.healthInfo?.alergias || 'Nenhuma informada'}
                 </Text>
               </View>
             </View>
@@ -305,7 +341,7 @@ export const PerfilScreen: React.FC<PerfilScreenProps> = ({ navigation }) => {
               <View style={styles.itemTextContainer}>
                 <Text style={styles.itemLabel}>Condição de saúde</Text>
                 <Text style={styles.itemValue}>
-                  {profile?.healthInfo.condicaoSaude || 'Nenhuma informada'}
+                  {profile?.healthInfo?.condicaoSaude || 'Nenhuma informada'}
                 </Text>
               </View>
             </View>
@@ -334,7 +370,7 @@ export const PerfilScreen: React.FC<PerfilScreenProps> = ({ navigation }) => {
             <TouchableOpacity
               style={styles.actionRow}
               activeOpacity={0.7}
-              onPress={() => navigation.navigate('SOS')}
+              onPress={() => navigateTo('SOS')}
               accessibilityRole="button"
               accessibilityLabel="Ir para Contatos de emergência"
             >
@@ -366,14 +402,14 @@ export const PerfilScreen: React.FC<PerfilScreenProps> = ({ navigation }) => {
           </View>
         </ScrollView>
 
-        {/* Barra de Navegação Inferior Fixa com Perfil Ativo */}
+        {/* Barra de Navegação Inferior Flutuante */}
         <View style={styles.bottomBarContainer}>
           <View style={styles.bottomBar}>
             {/* Tab: Home */}
             <TouchableOpacity
               style={styles.tabItem}
               activeOpacity={0.7}
-              onPress={() => navigation.navigate('Home')}
+              onPress={() => navigateTo('Home')}
               accessibilityRole="tab"
               accessibilityState={{ selected: false }}
               accessibilityLabel="Tela Principal"
@@ -385,7 +421,7 @@ export const PerfilScreen: React.FC<PerfilScreenProps> = ({ navigation }) => {
             <TouchableOpacity
               style={styles.tabItem}
               activeOpacity={0.7}
-              onPress={() => navigation.navigate('Medicamentos')}
+              onPress={() => navigateTo('Medicamentos')}
               accessibilityRole="tab"
               accessibilityState={{ selected: false }}
               accessibilityLabel="Medicamentos"
@@ -401,7 +437,7 @@ export const PerfilScreen: React.FC<PerfilScreenProps> = ({ navigation }) => {
             <TouchableOpacity
               style={styles.tabItem}
               activeOpacity={0.7}
-              onPress={() => navigation.navigate('Agenda')}
+              onPress={() => navigateTo('Agenda')}
               accessibilityRole="tab"
               accessibilityState={{ selected: false }}
               accessibilityLabel="Agenda"
@@ -409,15 +445,15 @@ export const PerfilScreen: React.FC<PerfilScreenProps> = ({ navigation }) => {
               <Feather name="calendar" size={22} color={COLORS.textMuted} />
             </TouchableOpacity>
 
-            {/* Tab: Perfil (ATIVO com destaque #D7F0DF) */}
+            {/* Tab: Perfil (ATIVO) */}
             <TouchableOpacity
               style={styles.activeTabItem}
-              activeOpacity={0.7}
+              activeOpacity={0.85}
               accessibilityRole="tab"
               accessibilityState={{ selected: true }}
               accessibilityLabel="Perfil"
             >
-              <Feather name="user" size={24} color={COLORS.primary} />
+              <Feather name="user" size={22} color={COLORS.primary} />
             </TouchableOpacity>
           </View>
         </View>
@@ -572,6 +608,8 @@ export const PerfilScreen: React.FC<PerfilScreenProps> = ({ navigation }) => {
   );
 };
 
+export default PerfilScreen;
+
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -584,7 +622,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 24,
     paddingTop: 16,
-    paddingBottom: 110, // Espaço para a barra de navegação inferior
+    paddingBottom: 110,
   },
   header: {
     flexDirection: 'row',
@@ -758,8 +796,9 @@ const styles = StyleSheet.create({
     }),
   },
   tabItem: {
-    width: 44,
-    height: 44,
+    width: 48,
+    height: 48,
+    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -771,7 +810,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  // Estilos do Modal
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.45)',

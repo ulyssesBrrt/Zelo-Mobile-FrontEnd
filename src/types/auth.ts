@@ -37,7 +37,7 @@ export interface LoginResult {
   success: boolean;
   message?: string;
   user?: User;
-  token?: string;
+
 }
 
 export interface ValidationErrors {

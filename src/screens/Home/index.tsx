@@ -11,12 +11,14 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/theme';
 import { HomeScreenNavigationProp, RootStackParamList } from '../../types/navigation';
 import { HomeData } from '../../types/home';
 import { medicationService } from '../../services/medicationService';
+import { profileService } from '../../services/profileService';
+import { sessionStore } from '../../services/sessionStore';
 
 export const HomeScreen: React.FC = () => {
   const navigation = useNavigation<HomeScreenNavigationProp>();
@@ -26,16 +28,23 @@ export const HomeScreen: React.FC = () => {
   const [isConfirmingDose, setIsConfirmingDose] = useState<boolean>(false);
   const [remainingSeconds, setRemainingSeconds] = useState<number>(0);
 
-  // Carrega os dados dinâmicos da Home através do serviço
   const loadHomeData = useCallback(async () => {
     try {
       const data = await medicationService.getHomeData();
-      setHomeData(data);
-      const diff = Math.max(
-        0,
-        Math.floor((data.nextMedication.proximaDoseTimestamp - Date.now()) / 1000)
-      );
-      setRemainingSeconds(diff);
+      const userSession = await sessionStore.restore();
+      const profile = await profileService.getProfile();
+
+      const latestFoto =
+        profile?.fotoUri ||
+        (userSession as any)?.fotoUri ||
+        data?.fotoUri ||
+        data?.avatarUrl;
+
+      setHomeData({
+        ...data,
+        fotoUri: latestFoto,
+        avatarUrl: latestFoto,
+      });
     } catch {
       Alert.alert('Erro', 'Não foi possível carregar os dados do medicamento.');
     } finally {
@@ -43,31 +52,50 @@ export const HomeScreen: React.FC = () => {
     }
   }, []);
 
+  useFocusEffect(
+    useCallback(() => {
+      loadHomeData();
+    }, [loadHomeData])
+  );
+
   useEffect(() => {
-    loadHomeData();
+    const unsubscribeMed = medicationService.subscribe(() => {
+      loadHomeData();
+    });
+    const unsubscribeProfile = profileService.subscribe(() => {
+      loadHomeData();
+    });
+    return () => {
+      unsubscribeMed();
+      unsubscribeProfile();
+    };
   }, [loadHomeData]);
 
-  // Contador regressivo em tempo real
+  // Cronómetro Regressivo em Tempo Real Sincronizado
   useEffect(() => {
-    if (!homeData) return;
+    const targetTimestamp = homeData?.nextMedication?.proximaDoseTimestamp;
 
-    const interval = setInterval(() => {
-      const diff = Math.max(
-        0,
-        Math.floor((homeData.nextMedication.proximaDoseTimestamp - Date.now()) / 1000)
-      );
-      setRemainingSeconds(diff);
-    }, 1000);
+    if (!targetTimestamp) {
+      setRemainingSeconds(0);
+      return;
+    }
+
+    const updateTimer = () => {
+      const now = Date.now();
+      const diffInSeconds = Math.max(0, Math.floor((targetTimestamp - now) / 1000));
+      setRemainingSeconds(diffInSeconds);
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
 
     return () => clearInterval(interval);
-  }, [homeData]);
+  }, [homeData?.nextMedication?.proximaDoseTimestamp]);
 
-  // Formatação das horas, minutos e segundos do contador
   const hours = String(Math.floor(remainingSeconds / 3600)).padStart(2, '0');
   const minutes = String(Math.floor((remainingSeconds % 3600) / 60)).padStart(2, '0');
   const seconds = String(remainingSeconds % 60).padStart(2, '0');
 
-  // Navegação preparada para telas existentes ou futuras
   const navigateTo = (routeName: keyof RootStackParamList, params?: any) => {
     const routeNames = navigation.getState()?.routeNames || [];
     if (routeNames.includes(routeName)) {
@@ -81,7 +109,12 @@ export const HomeScreen: React.FC = () => {
   };
 
   const handleConfirmarDose = async () => {
-    if (isConfirmingDose || !homeData) return;
+    if (isConfirmingDose || !homeData?.nextMedication) {
+      if (!homeData?.nextMedication) {
+        Alert.alert('Aviso', 'Nenhum medicamento pendente para confirmação.');
+      }
+      return;
+    }
 
     setIsConfirmingDose(true);
     try {
@@ -100,6 +133,8 @@ export const HomeScreen: React.FC = () => {
     }
   };
 
+  const avatarUri = homeData?.fotoUri || homeData?.avatarUrl;
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <View style={styles.container}>
@@ -112,7 +147,7 @@ export const HomeScreen: React.FC = () => {
             <View style={styles.greetingContainer}>
               <Text style={styles.greetingText}>Bem vindo</Text>
               <Text style={styles.userNameText}>
-                {homeData?.userName || 'Ulysses Barreto'}
+                {homeData?.userName || ''}
               </Text>
             </View>
 
@@ -140,7 +175,11 @@ export const HomeScreen: React.FC = () => {
                 accessibilityLabel="Perfil do usuário"
               >
                 <Image
-                  source={require('../../../assets/images/user_avatar.png')}
+                  source={
+                    avatarUri && avatarUri !== 'custom_photo_set'
+                      ? { uri: avatarUri }
+                      : require('../../../assets/images/user_avatar.png')
+                  }
                   style={styles.avatarImage}
                   resizeMode="cover"
                 />
@@ -150,15 +189,15 @@ export const HomeScreen: React.FC = () => {
 
           {/* Card: PRÓXIMO MEDICAMENTO */}
           <View style={styles.nextMedCard}>
+
             <View style={styles.nextMedTopRow}>
-              {/* Informações textuais do medicamento */}
               <View style={styles.nextMedInfo}>
                 <Text style={styles.nextMedBadge}>PRÓXIMO MEDICAMENTO</Text>
                 <Text style={styles.nextMedName}>
-                  {homeData?.nextMedication?.nome || 'Flouxetina 20mg'}
+                  {homeData?.nextMedication?.nome || 'Nenhum medicamento'}
                 </Text>
 
-                {/* Horário programado */}
+
                 <View style={styles.timeBadgeContainer}>
                   <Feather
                     name="clock"
@@ -167,16 +206,18 @@ export const HomeScreen: React.FC = () => {
                     style={styles.timeBadgeIcon}
                   />
                   <Text style={styles.timeBadgeText}>
-                    {homeData?.nextMedication?.horario || '10:00'}
+                    {homeData?.nextMedication?.horario || '--:--'}
                   </Text>
                 </View>
 
-                {/* Subtítulo do cronômetro */}
+
                 <Text style={styles.countdownTitle}>
-                  Falta para a sua próxima dose
+                  {homeData?.nextMedication
+                    ? 'Falta para a sua próxima dose'
+                    : 'Nenhuma dose programada'}
                 </Text>
 
-                {/* Dígitos do cronômetro */}
+
                 <View style={styles.timerRow}>
                   <View style={styles.digitBox}>
                     <Text style={styles.digitText}>{hours}</Text>
@@ -199,7 +240,7 @@ export const HomeScreen: React.FC = () => {
                 </View>
               </View>
 
-              {/* Ilustração 3D do frasco Zelo */}
+
               <View style={styles.illustrationContainer}>
                 <Image
                   source={require('../../../assets/images/ILUSTRAÇÃO.png')}
@@ -209,7 +250,7 @@ export const HomeScreen: React.FC = () => {
               </View>
             </View>
 
-            {/* Botão: Confirmar dose */}
+
             <TouchableOpacity
               style={[
                 styles.confirmButton,
@@ -231,9 +272,9 @@ export const HomeScreen: React.FC = () => {
 
           {/* Grid de 4 Cards: Medicamentos, Agenda, Histórico, SOS */}
           <View style={styles.gridContainer}>
-            {/* Linha 1 */}
+
             <View style={styles.gridRow}>
-              {/* Card 1: Medicamentos */}
+
               <TouchableOpacity
                 style={styles.featureCard}
                 activeOpacity={0.8}
@@ -262,7 +303,7 @@ export const HomeScreen: React.FC = () => {
                 </View>
               </TouchableOpacity>
 
-              {/* Card 2: Agenda */}
+
               <TouchableOpacity
                 style={styles.featureCard}
                 activeOpacity={0.8}
@@ -288,9 +329,9 @@ export const HomeScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
 
-            {/* Linha 2 */}
+
             <View style={styles.gridRow}>
-              {/* Card 3: Histórico */}
+
               <TouchableOpacity
                 style={styles.featureCard}
                 activeOpacity={0.8}
@@ -315,7 +356,7 @@ export const HomeScreen: React.FC = () => {
                 </View>
               </TouchableOpacity>
 
-              {/* Card 4: SOS */}
+
               <TouchableOpacity
                 style={styles.featureCard}
                 activeOpacity={0.8}
@@ -350,7 +391,7 @@ export const HomeScreen: React.FC = () => {
         {/* Barra de Navegação Inferior Flutuante */}
         <View style={styles.bottomBarContainer}>
           <View style={styles.bottomBar}>
-            {/* Tab: Home (Ativo) */}
+
             <TouchableOpacity
               style={styles.activeTabItem}
               activeOpacity={0.85}
@@ -361,7 +402,7 @@ export const HomeScreen: React.FC = () => {
               <Feather name="home" size={22} color={COLORS.primary} />
             </TouchableOpacity>
 
-            {/* Tab: Medicamentos */}
+
             <TouchableOpacity
               style={styles.tabItem}
               activeOpacity={0.7}
@@ -377,7 +418,7 @@ export const HomeScreen: React.FC = () => {
               />
             </TouchableOpacity>
 
-            {/* Tab: Agenda */}
+
             <TouchableOpacity
               style={styles.tabItem}
               activeOpacity={0.7}
@@ -389,7 +430,7 @@ export const HomeScreen: React.FC = () => {
               <Feather name="calendar" size={22} color={COLORS.textMuted} />
             </TouchableOpacity>
 
-            {/* Tab: Perfil */}
+
             <TouchableOpacity
               style={styles.tabItem}
               activeOpacity={0.7}
@@ -407,6 +448,8 @@ export const HomeScreen: React.FC = () => {
   );
 };
 
+export default HomeScreen;
+
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -419,7 +462,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 20,
     paddingTop: 12,
-    paddingBottom: 100, // Espaço para a barra inferior flutuante
+    paddingBottom: 100,
   },
   header: {
     flexDirection: 'row',
@@ -480,7 +523,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     ...Platform.select({
       ios: {
-        shadowColor: '#3FA66B',
+        shadowColor: '#3fa66bff',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.08,
         shadowRadius: 12,
