@@ -20,21 +20,32 @@ const toUser = (u: ApiUsuario): User => ({
 
 class AuthService {
   async register(payload: RegisterPayload): Promise<RegisterResult> {
-    // Mantemos a sua validação exata para não quebrar a interface visual
-    if (!payload.nome.trim() || !payload.email.trim() || !payload.senha?.trim()) {
+    if (!payload.nome?.trim() || !payload.email?.trim() || !payload.senha?.trim()) {
       return {
         success: false,
         message: 'Preencha todos os campos obrigatórios.',
       };
     }
 
+    const body = {
+      nome: payload.nome.trim(),
+      email: payload.email.trim(),
+      senha: payload.senha
+    };
+
     try {
-      // Chamada real para o backend
-      const u = await api.post<ApiUsuario>('/api/auth/cadastro', {
-        nome: payload.nome.trim(),
-        email: payload.email.trim(),
-        senha: payload.senha
-      });
+      let u: ApiUsuario;
+
+      // Tenta a rota padrão /api/auth/cadastro e faz fallback para /cadastro em caso de 404
+      try {
+        u = await api.post<ApiUsuario>('/api/auth/cadastro', body);
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 404) {
+          u = await api.post<ApiUsuario>('/cadastro', body);
+        } else {
+          throw e;
+        }
+      }
 
       return {
         success: true,
@@ -42,11 +53,21 @@ class AuthService {
         user: toUser(u),
       };
     } catch (e) {
-      // Trata erro de rede (servidor desligado, sem internet, etc)
-      if (e instanceof ApiError && e.status === 0) {
-        return { success: false, message: e.message };
+      if (e instanceof ApiError) {
+        if (e.status === 0) {
+          return {
+            success: false,
+            message: 'Servidor indisponível. Verifique se a API no Render está ativa.'
+          };
+        }
+        if (e.status === 400) {
+          return {
+            success: false,
+            message: 'Dados de cadastro inválidos. Verifique os campos preenchidos.'
+          };
+        }
       }
-      // O Spring Boot vai dar erro 500 se o email já existir no banco de dados
+
       return {
         success: false,
         message: 'Não foi possível criar a conta. O e-mail pode já estar em uso.',
@@ -55,10 +76,9 @@ class AuthService {
   }
 
   async login(payload: LoginPayload): Promise<LoginResult> {
-    const email = payload.email.trim();
+    const email = payload.email?.trim();
     const senha = payload.senha;
 
-    // Mantemos a sua validação exata para não quebrar a interface visual
     if (!email || !senha) {
       return {
         success: false,
@@ -66,12 +86,21 @@ class AuthService {
       };
     }
 
+    const body = { email, senha };
+
     try {
-      // Chamada real para o backend
-      const u = await api.post<ApiUsuario>('/api/auth/login', {
-        email,
-        senha
-      });
+      let u: ApiUsuario;
+
+      // Tenta a rota padrão /api/auth/login e faz fallback para /login se der 404
+      try {
+        u = await api.post<ApiUsuario>('/api/auth/login', body);
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 404) {
+          u = await api.post<ApiUsuario>('/login', body);
+        } else {
+          throw e;
+        }
+      }
 
       return {
         success: true,
@@ -79,15 +108,27 @@ class AuthService {
         user: toUser(u),
       };
     } catch (e) {
-      // Se o backend retornar 401 (Unauthorized), mostramos a sua mensagem exata de erro
-      if (e instanceof ApiError && e.status === 401) {
-        return {
-          success: false,
-          message: 'E-mail ou senha incorretos.',
-        };
+      if (e instanceof ApiError) {
+        if (e.status === 401) {
+          return {
+            success: false,
+            message: 'E-mail ou senha incorretos.',
+          };
+        }
+        if (e.status === 400) {
+          return {
+            success: false,
+            message: 'Requisição inválida. Verifique os dados digitados.',
+          };
+        }
+        if (e.status === 0) {
+          return {
+            success: false,
+            message: 'Não foi possível conectar ao servidor no Render.',
+          };
+        }
       }
 
-      // Erro genérico / servidor desligado
       return {
         success: false,
         message: e instanceof ApiError ? e.message : 'Erro inesperado no servidor.',
