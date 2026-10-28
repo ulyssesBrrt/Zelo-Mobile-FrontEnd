@@ -15,12 +15,16 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import { COLORS } from '../../constants/theme';
 import { PerfilScreenNavigationProp, RootStackParamList } from '../../types/navigation';
 import { profileService } from '../../services/profileService';
 import { medicationService } from '../../services/medicationService';
 import { sessionStore } from '../../services/sessionStore';
 import { UserProfile } from '../../types/profile';
+
+const USER_PHOTO_KEY = '@zelo_user_photo';
 
 interface PerfilScreenProps {
   navigation: PerfilScreenNavigationProp;
@@ -46,12 +50,29 @@ export const PerfilScreen: React.FC<PerfilScreenProps> = ({ navigation }) => {
 
   useEffect(() => {
     let isMounted = true;
-    profileService.getProfile().then((data) => {
-      if (isMounted) setProfile(data);
-    });
 
-    const unsubscribe = profileService.subscribe((updated) => {
-      if (isMounted) setProfile(updated);
+    const loadProfileAndPhoto = async () => {
+      const data = await profileService.getProfile();
+      const localPhoto = await AsyncStorage.getItem(USER_PHOTO_KEY);
+
+      if (isMounted) {
+        setProfile((prev) => ({
+          ...data,
+          fotoUri: localPhoto || data?.fotoUri || '',
+        }));
+      }
+    };
+
+    loadProfileAndPhoto();
+
+    const unsubscribe = profileService.subscribe(async (updated) => {
+      const localPhoto = await AsyncStorage.getItem(USER_PHOTO_KEY);
+      if (isMounted) {
+        setProfile({
+          ...updated,
+          fotoUri: localPhoto || updated?.fotoUri || '',
+        });
+      }
     });
 
     return () => {
@@ -137,17 +158,27 @@ export const PerfilScreen: React.FC<PerfilScreenProps> = ({ navigation }) => {
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
 
-        // Atualiza na sessão local (AsyncStorage)
+        // 1. Persiste localmente no dispositivo para não perder ao trocar de tela
+        await AsyncStorage.setItem(USER_PHOTO_KEY, asset.uri);
+
+        // 2. Atualiza a sessão local do usuário
         await sessionStore.updateFoto(asset.uri);
 
-        // Envia a imagem para o serviço de perfil
-        await profileService.updatePhoto(
-          asset.uri,
-          asset.fileName || 'profile.jpg',
-          asset.mimeType || 'image/jpeg'
-        );
+        // 3. Atualiza no estado local da tela
+        setProfile((prev) => (prev ? { ...prev, fotoUri: asset.uri } : prev));
 
-        // Notifica inscritos para atualizar a Home
+        // 4. Envia a imagem para o serviço de perfil
+        try {
+          await profileService.updatePhoto(
+            asset.uri,
+            asset.fileName || 'profile.jpg',
+            asset.mimeType || 'image/jpeg'
+          );
+        } catch {
+          // Ignora se for erro remoto, mantendo a foto salva localmente
+        }
+
+        // 5. Notifica os componentes para atualizar a Home instantaneamente
         medicationService.notify();
 
         Alert.alert('Sucesso', 'Foto de perfil atualizada com sucesso!');
@@ -165,6 +196,12 @@ export const PerfilScreen: React.FC<PerfilScreenProps> = ({ navigation }) => {
       [{ text: 'OK' }]
     );
   };
+
+  const hasPhoto = Boolean(
+    profile?.fotoUri &&
+    profile.fotoUri !== 'custom_photo_set' &&
+    profile.fotoUri.trim() !== ''
+  );
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
@@ -197,15 +234,18 @@ export const PerfilScreen: React.FC<PerfilScreenProps> = ({ navigation }) => {
           {/* Foto de Perfil Central com Botão de Câmera */}
           <View style={styles.avatarSection}>
             <View style={styles.avatarContainer}>
-              <Image
-                source={
-                  profile?.fotoUri && profile.fotoUri !== 'custom_photo_set'
-                    ? { uri: profile.fotoUri }
-                    : require('../../../assets/images/user_avatar.png')
-                }
-                style={styles.avatarImage}
-                resizeMode="cover"
-              />
+              {hasPhoto ? (
+                <Image
+                  source={{ uri: profile!.fotoUri }}
+                  style={styles.avatarImage}
+                  resizeMode="cover"
+                />
+              ) : (
+                /* Ícone neutro quando o usuário não tem foto escolhida */
+                <View style={styles.avatarPlaceholder}>
+                  <Feather name="user" size={42} color={COLORS.primary} />
+                </View>
+              )}
             </View>
 
             {/* Botão circular de câmera para alterar a imagem */}
@@ -675,6 +715,14 @@ const styles = StyleSheet.create({
   avatarImage: {
     width: 100,
     height: 100,
+  },
+  avatarPlaceholder: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#D7F0DF',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   cameraButton: {
     position: 'absolute',

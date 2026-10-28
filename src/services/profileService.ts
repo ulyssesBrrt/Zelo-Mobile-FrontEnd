@@ -1,8 +1,11 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_URL } from '../config/env';
 import { api } from './api';
 import { sessionStore } from './sessionStore';
 import { UserProfile, HealthInfo } from '../types/profile';
 import { medicationService } from './medicationService';
+
+const USER_PHOTO_KEY = '@zelo_user_photo';
 
 interface ApiUsuarioProfile {
   id: number;
@@ -71,11 +74,19 @@ class ProfileService {
     const dataFormatada = this.formatarDataExibicao(apiUser.dataNascimento);
 
     // Prioriza a foto local para garantir exibição imediata no React Native
-    let finalFotoUri = localFotoUri || apiUser.fotoUrl || apiUser.fotoUri;
+    let finalFotoUri = localFotoUri || apiUser.fotoUrl || apiUser.fotoUri || '';
 
-    if (finalFotoUri && !finalFotoUri.startsWith('http') && !finalFotoUri.startsWith('file') && !finalFotoUri.startsWith('content') && !finalFotoUri.startsWith('ph')) {
+    if (
+      finalFotoUri &&
+      !finalFotoUri.startsWith('http') &&
+      !finalFotoUri.startsWith('file') &&
+      !finalFotoUri.startsWith('content') &&
+      !finalFotoUri.startsWith('ph') &&
+      !finalFotoUri.startsWith('data:')
+    ) {
       const cleanPath = finalFotoUri.startsWith('/') ? finalFotoUri : `/${finalFotoUri}`;
-      finalFotoUri = `${API_URL}${cleanPath}`;
+      const cleanBaseUrl = (API_URL || '').replace(/\/+$/, '');
+      finalFotoUri = `${cleanBaseUrl}${cleanPath}`;
     }
 
     return {
@@ -96,21 +107,26 @@ class ProfileService {
   }
 
   async getProfile(): Promise<UserProfile> {
+    const savedLocalPhoto = await AsyncStorage.getItem(USER_PHOTO_KEY);
+
     try {
       const userId = await this.getUserId();
       const apiUser = await api.get<ApiUsuarioProfile>(`/api/usuarios/${userId}`);
       const user = await sessionStore.restore();
-      // Se houver uma foto salva na sessão local, utiliza ela
-      return this.mapToUserProfile(apiUser, (user as any)?.fotoUri);
+
+      const effectivePhoto = savedLocalPhoto || (user as any)?.fotoUri;
+      return this.mapToUserProfile(apiUser, effectivePhoto);
     } catch (error) {
       console.error('Erro ao buscar perfil:', error);
       const user = await sessionStore.restore();
+      const effectivePhoto = savedLocalPhoto || (user as any)?.fotoUri || '';
+
       return {
         id: user?.id ? String(user.id) : '',
         nome: user?.nome || '',
         email: user?.email || '',
         telefone: (user as any)?.telefone || '',
-        fotoUri: (user as any)?.fotoUri || undefined,
+        fotoUri: effectivePhoto,
         dataNascimento: '',
         healthInfo: {
           dataNascimento: '',
@@ -136,7 +152,8 @@ class ProfileService {
       if (data.dataNascimento !== undefined) payload.dataNascimento = data.dataNascimento;
 
       const apiUser = await api.put<ApiUsuarioProfile>(`/api/usuarios/${userId}`, payload);
-      const updated = this.mapToUserProfile(apiUser);
+      const savedLocalPhoto = await AsyncStorage.getItem(USER_PHOTO_KEY);
+      const updated = this.mapToUserProfile(apiUser, savedLocalPhoto || undefined);
       this.notify(updated);
       return updated;
     } catch (error) {
@@ -158,7 +175,8 @@ class ProfileService {
       };
 
       const apiUser = await api.put<ApiUsuarioProfile>(`/api/usuarios/${userId}/saude`, payloadSaude);
-      const updated = this.mapToUserProfile(apiUser);
+      const savedLocalPhoto = await AsyncStorage.getItem(USER_PHOTO_KEY);
+      const updated = this.mapToUserProfile(apiUser, savedLocalPhoto || undefined);
       this.notify(updated);
       return updated;
     } catch (error) {
@@ -174,7 +192,8 @@ class ProfileService {
   ): Promise<UserProfile> {
     if (!fotoUri) return this.getProfile();
 
-    // 1. Salva imediatamente na sessão local do aplicativo e notifica os inscritos
+    // 1. Salva imediatamente no AsyncStorage e na sessão local
+    await AsyncStorage.setItem(USER_PHOTO_KEY, fotoUri);
     await sessionStore.updateFoto(fotoUri);
     medicationService.notify();
 
@@ -213,7 +232,8 @@ class ProfileService {
       } as any);
 
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${API_URL}/api/usuarios/${userId}/foto`);
+      const cleanBaseUrl = (API_URL || '').replace(/\/+$/, '');
+      xhr.open('POST', `${cleanBaseUrl}/api/usuarios/${userId}/foto`);
       xhr.setRequestHeader('Accept', 'application/json');
       xhr.timeout = 15000;
       xhr.send(formData);

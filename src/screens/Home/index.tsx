@@ -13,7 +13,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { COLORS } from '../../constants/theme';
 import { HomeScreenNavigationProp, RootStackParamList } from '../../types/navigation';
@@ -105,7 +104,7 @@ export const HomeScreen: React.FC = () => {
     } else {
       Alert.alert(
         'Navegação',
-        `A tela "${routeName}" foi preparada e será implementada posteriormente.`
+        `A tela "${routeName}" foi prepared e será implementada posteriormente.`
       );
     }
   };
@@ -135,24 +134,6 @@ export const HomeScreen: React.FC = () => {
     }
   };
 
-  // Função de Logout Rápido para Troca de Usuário no Expo Go
-  const handleLogout = async () => {
-    try {
-      await AsyncStorage.clear();
-      if ((sessionStore as any).clear) {
-        await (sessionStore as any).clear();
-      }
-
-      const parentNav = navigation.getParent() || navigation;
-      parentNav.reset({
-        index: 0,
-        routes: [{ name: 'Login' as any }],
-      });
-    } catch {
-      Alert.alert('Erro', 'Não foi possível encerrar a sessão.');
-    }
-  };
-
   const avatarUri = homeData?.fotoUri || homeData?.avatarUrl;
 
   return (
@@ -172,17 +153,6 @@ export const HomeScreen: React.FC = () => {
             </View>
 
             <View style={styles.headerRight}>
-              {/* Botão de Logout Rápido */}
-              <TouchableOpacity
-                style={styles.iconButton}
-                activeOpacity={0.7}
-                onPress={handleLogout}
-                accessibilityRole="button"
-                accessibilityLabel="Sair da conta"
-              >
-                <Feather name="log-out" size={20} color="#EF4444" />
-              </TouchableOpacity>
-
               {/* Notificação */}
               <TouchableOpacity
                 style={styles.notificationButton}
@@ -405,16 +375,6 @@ export const HomeScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
           </View>
-
-          {/* Botão de Logout para Apresentação */}
-          <TouchableOpacity
-            style={styles.presentationLogoutButton}
-            activeOpacity={0.8}
-            onPress={handleLogout}
-          >
-            <Feather name="log-out" size={16} color="#EF4444" style={{ marginRight: 8 }} />
-            <Text style={styles.presentationLogoutText}>Sair da Conta (Trocar Usuário)</Text>
-          </TouchableOpacity>
         </ScrollView>
 
         {/* Barra de Navegação Inferior Flutuante */}
@@ -512,13 +472,6 @@ const styles = StyleSheet.create({
   headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  iconButton: {
-    width: 36,
-    height: 36,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 4,
   },
   notificationButton: {
     width: 36,
@@ -729,22 +682,6 @@ const styles = StyleSheet.create({
   featureArrow: {
     marginLeft: 4,
     marginBottom: 2,
-  },
-  presentationLogoutButton: {
-    flexDirection: 'row',
-    backgroundColor: '#FEE2E2',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 10,
-    marginBottom: 10,
-  },
-  presentationLogoutText: {
-    color: '#EF4444',
-    fontSize: 13,
-    fontWeight: '700',
   },
   bottomBarContainer: {
     position: 'absolute',
