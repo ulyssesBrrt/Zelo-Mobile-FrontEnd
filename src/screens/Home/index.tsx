@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { COLORS } from '../../constants/theme';
 import { HomeScreenNavigationProp, RootStackParamList } from '../../types/navigation';
@@ -20,6 +21,8 @@ import { HomeData } from '../../types/home';
 import { medicationService } from '../../services/medicationService';
 import { profileService } from '../../services/profileService';
 import { sessionStore } from '../../services/sessionStore';
+
+const USER_PHOTO_KEY = '@zelo_user_photo';
 
 export const HomeScreen: React.FC = () => {
   const navigation = useNavigation<HomeScreenNavigationProp>();
@@ -34,12 +37,16 @@ export const HomeScreen: React.FC = () => {
       const data = await medicationService.getHomeData();
       const userSession = await sessionStore.restore();
       const profile = await profileService.getProfile();
+      // 1. Busca primeiro a foto salva localmente no AsyncStorage
+      const savedLocalPhoto = await AsyncStorage.getItem(USER_PHOTO_KEY);
 
       const latestFoto =
+        savedLocalPhoto ||
         profile?.fotoUri ||
         (userSession as any)?.fotoUri ||
         data?.fotoUri ||
-        data?.avatarUrl;
+        data?.avatarUrl ||
+        '';
 
       setHomeData({
         ...data,
@@ -104,7 +111,7 @@ export const HomeScreen: React.FC = () => {
     } else {
       Alert.alert(
         'Navegação',
-        `A tela "${routeName}" foi prepared e será implementada posteriormente.`
+        `A tela "${routeName}" foi preparada e será implementada posteriormente.`
       );
     }
   };
@@ -135,6 +142,11 @@ export const HomeScreen: React.FC = () => {
   };
 
   const avatarUri = homeData?.fotoUri || homeData?.avatarUrl;
+  const hasPhoto = Boolean(
+    avatarUri &&
+    avatarUri !== 'custom_photo_set' &&
+    avatarUri.trim() !== ''
+  );
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
@@ -175,15 +187,18 @@ export const HomeScreen: React.FC = () => {
                 accessibilityRole="button"
                 accessibilityLabel="Perfil do usuário"
               >
-                <Image
-                  source={
-                    avatarUri && avatarUri !== 'custom_photo_set'
-                      ? { uri: avatarUri }
-                      : require('../../../assets/images/user_avatar.png')
-                  }
-                  style={styles.avatarImage}
-                  resizeMode="cover"
-                />
+                {hasPhoto ? (
+                  <Image
+                    source={{ uri: avatarUri }}
+                    style={styles.avatarImage}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  /* Ícone neutro quando não houver foto selecionada */
+                  <View style={styles.avatarPlaceholder}>
+                    <Feather name="user" size={20} color={COLORS.primary} />
+                  </View>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -500,6 +515,14 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
+  },
+  avatarPlaceholder: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#D7F0DF',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   nextMedCard: {
     backgroundColor: COLORS.primaryLight,
