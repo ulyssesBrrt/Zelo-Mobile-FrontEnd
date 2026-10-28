@@ -152,40 +152,46 @@ export const PerfilScreen: React.FC<PerfilScreenProps> = ({ navigation }) => {
         mediaTypes: ['images'],
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 0.8,
+        quality: 0.6,
+        base64: true, // Garante que a foto seja convertida para formato seguro e permanente
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
 
-        // 1. Persiste localmente no dispositivo para não perder ao trocar de tela
-        await AsyncStorage.setItem(USER_PHOTO_KEY, asset.uri);
+        // Monta a string em formato Base64 para persistência permanente
+        const permanentUri = asset.base64
+          ? `data:image/jpeg;base64,${asset.base64}`
+          : asset.uri;
 
-        // 2. Atualiza a sessão local do usuário
-        await sessionStore.updateFoto(asset.uri);
+        // 1. Salva permanentemente no AsyncStorage do dispositivo
+        await AsyncStorage.setItem(USER_PHOTO_KEY, permanentUri);
 
-        // 3. Atualiza no estado local da tela
-        setProfile((prev) => (prev ? { ...prev, fotoUri: asset.uri } : prev));
+        // 2. Atualiza a sessão do usuário
+        await sessionStore.updateFoto(permanentUri);
 
-        // 4. Envia a imagem para o serviço de perfil
+        // 3. Atualiza o estado da própria tela de Perfil
+        setProfile((prev) => (prev ? { ...prev, fotoUri: permanentUri } : prev));
+
+        // 4. Envia para o serviço remoto se necessário
         try {
           await profileService.updatePhoto(
-            asset.uri,
+            permanentUri,
             asset.fileName || 'profile.jpg',
             asset.mimeType || 'image/jpeg'
           );
         } catch {
-          // Ignora se for erro remoto, mantendo a foto salva localmente
+          // Mantém a foto salva localmente mesmo se a API não responder
         }
 
-        // 5. Notifica os componentes para atualizar a Home instantaneamente
+        // 5. Sincroniza instantaneamente com a HomeScreen
         medicationService.notify();
 
-        Alert.alert('Sucesso', 'Foto de perfil atualizada com sucesso!');
+        Alert.alert('Sucesso', 'Foto de perfil salva permanentemente!');
       }
     } catch (error) {
       console.error('Erro ao selecionar foto:', error);
-      Alert.alert('Aviso', 'A foto foi salva apenas localmente no dispositivo.');
+      Alert.alert('Erro', 'Não foi possível salvar a foto.');
     }
   };
 
@@ -241,7 +247,7 @@ export const PerfilScreen: React.FC<PerfilScreenProps> = ({ navigation }) => {
                   resizeMode="cover"
                 />
               ) : (
-                /* Ícone neutro quando o usuário não tem foto escolhida */
+                /* Ícone neutro quando o usuário não selecionou foto */
                 <View style={styles.avatarPlaceholder}>
                   <Feather name="user" size={42} color={COLORS.primary} />
                 </View>

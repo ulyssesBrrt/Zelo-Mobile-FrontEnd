@@ -37,7 +37,8 @@ export const HomeScreen: React.FC = () => {
       const data = await medicationService.getHomeData();
       const userSession = await sessionStore.restore();
       const profile = await profileService.getProfile();
-      // 1. Busca primeiro a foto salva localmente no AsyncStorage
+
+      // Busca primeiro a foto salva localmente no AsyncStorage (compatível com Base64)
       const savedLocalPhoto = await AsyncStorage.getItem(USER_PHOTO_KEY);
 
       const latestFoto =
