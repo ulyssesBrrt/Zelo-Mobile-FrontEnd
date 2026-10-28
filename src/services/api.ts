@@ -9,13 +9,20 @@ export class ApiError extends Error {
 type Query = Record<string, string | number | boolean | undefined>;
 
 function buildUrl(path: string, query?: Query) {
+    // 1. Remove qualquer barra '/' no final da API_URL
+    const cleanBaseUrl = (API_URL || '').replace(/\/+$/, '');
+
+    // 2. Garante que o path comece exatamente com uma barra '/'
+    const cleanPath = path.startsWith('/') ? path : `/${path}`;
+
     const qs = query
         ? Object.entries(query)
             .filter(([, v]) => v !== undefined)
             .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
             .join('&')
         : '';
-    return `${API_URL}${path}${qs ? `?${qs}` : ''}`;
+
+    return `${cleanBaseUrl}${cleanPath}${qs ? `?${qs}` : ''}`;
 }
 
 async function request<T>(
@@ -24,7 +31,8 @@ async function request<T>(
     opts: { body?: unknown; query?: Query; headers?: Record<string, string> } = {}
 ): Promise<T> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS || 10000);
+    // Timeout padrão ajustado para 30s caso REQUEST_TIMEOUT_MS não esteja definido
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS || 30000);
     let res: Response;
 
     const isFormData = typeof FormData !== 'undefined' && opts.body instanceof FormData;
