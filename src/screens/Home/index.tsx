@@ -13,6 +13,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import { COLORS } from '../../constants/theme';
 import { HomeScreenNavigationProp, RootStackParamList } from '../../types/navigation';
 import { HomeData } from '../../types/home';
@@ -133,6 +135,24 @@ export const HomeScreen: React.FC = () => {
     }
   };
 
+  // Função de Logout Rápido para Troca de Usuário no Expo Go
+  const handleLogout = async () => {
+    try {
+      await AsyncStorage.clear();
+      if ((sessionStore as any).clear) {
+        await (sessionStore as any).clear();
+      }
+
+      const parentNav = navigation.getParent() || navigation;
+      parentNav.reset({
+        index: 0,
+        routes: [{ name: 'Login' as any }],
+      });
+    } catch {
+      Alert.alert('Erro', 'Não foi possível encerrar a sessão.');
+    }
+  };
+
   const avatarUri = homeData?.fotoUri || homeData?.avatarUrl;
 
   return (
@@ -152,6 +172,17 @@ export const HomeScreen: React.FC = () => {
             </View>
 
             <View style={styles.headerRight}>
+              {/* Botão de Logout Rápido */}
+              <TouchableOpacity
+                style={styles.iconButton}
+                activeOpacity={0.7}
+                onPress={handleLogout}
+                accessibilityRole="button"
+                accessibilityLabel="Sair da conta"
+              >
+                <Feather name="log-out" size={20} color="#EF4444" />
+              </TouchableOpacity>
+
               {/* Notificação */}
               <TouchableOpacity
                 style={styles.notificationButton}
@@ -189,14 +220,12 @@ export const HomeScreen: React.FC = () => {
 
           {/* Card: PRÓXIMO MEDICAMENTO */}
           <View style={styles.nextMedCard}>
-
             <View style={styles.nextMedTopRow}>
               <View style={styles.nextMedInfo}>
                 <Text style={styles.nextMedBadge}>PRÓXIMO MEDICAMENTO</Text>
                 <Text style={styles.nextMedName}>
                   {homeData?.nextMedication?.nome || 'Nenhum medicamento'}
                 </Text>
-
 
                 <View style={styles.timeBadgeContainer}>
                   <Feather
@@ -210,13 +239,11 @@ export const HomeScreen: React.FC = () => {
                   </Text>
                 </View>
 
-
                 <Text style={styles.countdownTitle}>
                   {homeData?.nextMedication
                     ? 'Falta para a sua próxima dose'
                     : 'Nenhuma dose programada'}
                 </Text>
-
 
                 <View style={styles.timerRow}>
                   <View style={styles.digitBox}>
@@ -240,7 +267,6 @@ export const HomeScreen: React.FC = () => {
                 </View>
               </View>
 
-
               <View style={styles.illustrationContainer}>
                 <Image
                   source={require('../../../assets/images/ILUSTRAÇÃO.png')}
@@ -249,7 +275,6 @@ export const HomeScreen: React.FC = () => {
                 />
               </View>
             </View>
-
 
             <TouchableOpacity
               style={[
@@ -272,9 +297,7 @@ export const HomeScreen: React.FC = () => {
 
           {/* Grid de 4 Cards: Medicamentos, Agenda, Histórico, SOS */}
           <View style={styles.gridContainer}>
-
             <View style={styles.gridRow}>
-
               <TouchableOpacity
                 style={styles.featureCard}
                 activeOpacity={0.8}
@@ -303,7 +326,6 @@ export const HomeScreen: React.FC = () => {
                 </View>
               </TouchableOpacity>
 
-
               <TouchableOpacity
                 style={styles.featureCard}
                 activeOpacity={0.8}
@@ -329,9 +351,7 @@ export const HomeScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
 
-
             <View style={styles.gridRow}>
-
               <TouchableOpacity
                 style={styles.featureCard}
                 activeOpacity={0.8}
@@ -356,7 +376,6 @@ export const HomeScreen: React.FC = () => {
                 </View>
               </TouchableOpacity>
 
-
               <TouchableOpacity
                 style={styles.featureCard}
                 activeOpacity={0.8}
@@ -374,7 +393,7 @@ export const HomeScreen: React.FC = () => {
                 <Text style={styles.featureTitle}>SOS</Text>
                 <View style={styles.featureBottomRow}>
                   <Text style={styles.featureSubtitle}>
-                    Precisa de ajuda?{'\n'}Aceso rápido
+                    Precisa de ajuda?{'\n'}Acesso rápido
                   </Text>
                   <Feather
                     name="arrow-right"
@@ -386,12 +405,21 @@ export const HomeScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
           </View>
+
+          {/* Botão de Logout para Apresentação */}
+          <TouchableOpacity
+            style={styles.presentationLogoutButton}
+            activeOpacity={0.8}
+            onPress={handleLogout}
+          >
+            <Feather name="log-out" size={16} color="#EF4444" style={{ marginRight: 8 }} />
+            <Text style={styles.presentationLogoutText}>Sair da Conta (Trocar Usuário)</Text>
+          </TouchableOpacity>
         </ScrollView>
 
         {/* Barra de Navegação Inferior Flutuante */}
         <View style={styles.bottomBarContainer}>
           <View style={styles.bottomBar}>
-
             <TouchableOpacity
               style={styles.activeTabItem}
               activeOpacity={0.85}
@@ -401,7 +429,6 @@ export const HomeScreen: React.FC = () => {
             >
               <Feather name="home" size={22} color={COLORS.primary} />
             </TouchableOpacity>
-
 
             <TouchableOpacity
               style={styles.tabItem}
@@ -418,7 +445,6 @@ export const HomeScreen: React.FC = () => {
               />
             </TouchableOpacity>
 
-
             <TouchableOpacity
               style={styles.tabItem}
               activeOpacity={0.7}
@@ -429,7 +455,6 @@ export const HomeScreen: React.FC = () => {
             >
               <Feather name="calendar" size={22} color={COLORS.textMuted} />
             </TouchableOpacity>
-
 
             <TouchableOpacity
               style={styles.tabItem}
@@ -462,7 +487,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 20,
     paddingTop: 12,
-    paddingBottom: 100,
+    paddingBottom: 110,
   },
   header: {
     flexDirection: 'row',
@@ -487,6 +512,13 @@ const styles = StyleSheet.create({
   headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  iconButton: {
+    width: 36,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 4,
   },
   notificationButton: {
     width: 36,
@@ -697,6 +729,22 @@ const styles = StyleSheet.create({
   featureArrow: {
     marginLeft: 4,
     marginBottom: 2,
+  },
+  presentationLogoutButton: {
+    flexDirection: 'row',
+    backgroundColor: '#FEE2E2',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 10,
+    marginBottom: 10,
+  },
+  presentationLogoutText: {
+    color: '#EF4444',
+    fontSize: 13,
+    fontWeight: '700',
   },
   bottomBarContainer: {
     position: 'absolute',
